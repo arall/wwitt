@@ -8,10 +8,14 @@ set_time_limit(0);
 /**
 * Config
 **/
+//Database
 $config['database']['host'] = "localhost";
 $config['database']['username'] = "root";
 $config['database']['password'] = "";
 $config['database']['database'] = "wwitt";
+//Bing
+$config['bing']['maxPage'] = 1;
+//General
 $config['general']['timeout'] = 1;
 $config['general']['vervose'] = 1; //0, 1, 2 (none, infos, debug)
 $config['general']['ports'] = array(21, 22, 25, 80, 8080, 3306);
@@ -21,13 +25,20 @@ $config['general']['ports'] = array(21, 22, 25, 80, 8080, 3306);
 **/
 include("classes/model.class.php");
 include("classes/host.class.php");
-include("classes/head.class.php");
+include("classes/service.class.php");
+include("classes/virtualhost.class.php");
 
 /**
 * Includes
 **/
 include("libs/database.php");
 include("libs/functions.php");
+include("libs/simple_html_dom.php");
+
+/**
+* PHP Pear
+**/
+require_once 'Net/Nmap.php'; //http://pear.php.net/package/Net_Nmap
 
 /**
 * Args
@@ -77,26 +88,39 @@ if($args['verbose']){
 //DB Connection
 $db = new Database($config['database']['host'], $config['database']['user'], $config['database']['password'], $config['database']['database']);
 
-//Demo
-echo colorize("Starting Demo", "title");
-for($ip1=87;$ip1<=87;$ip1++){
-    for($ip2=98;$ip2<=98;$ip2++){
-        for($ip3=227;$ip3<=227;$ip3++){
-            for($ip4=50;$ip4<=60;$ip4++){
+//OVH IP Rank (Devel demos)
+for($ip1=5;$ip1<=5;$ip1++){
+    for($ip2=135;$ip2<=135;$ip2++){
+        for($ip3=0;$ip3<=255;$ip3++){
+            for($ip4=0;$ip4<=255;$ip4++){
                 $ip = $ip1.".".$ip2.".".$ip3.".".$ip4;
                 //Exist?
                 $host = Host::getHostFromIp($ip);
                 if(!$host){
-                    echo colorize("New IP: ".$ip);
+                    echo colorize("New IP: ".$ip, "notice");
                     $host = new Host();
                     $host->ip = $ip;
                     $host->insert();
+                    echo colorize("Starting Port Scan...", "success");
+                    $host->exePortScan();
+                    if($host->status){
+                        echo colorize("Starting Bing IP Search...", "success");
+                        $host->exeBingIpScan();
+                        if($host->hostname && $host->hostname!="unknown"){
+                            if(!VirtualHost::getVirtualHostByIpIdHost($host->id, $host->hostname)){
+                                echo colorize("Self IP Virtual Host (".$host->hostname.")...", "success");
+                                $virtualHost = new VirtualHost();
+                                $virtualHost->ipId = $host->id;
+                                $virtualHost->host = $host->hostname;
+                                $virtualHost->url = getLastEffectiveUrl($host->hostname, $virtualHost->index);
+                                $virtualHost->head = curlHead($virtualHost->hostname);
+                                $virtualHost->insert();
+                                echo colorize($host->hostname);
+                            }
+                        }
+                    }
                 }else{
                     echo colorize("IP already exist: ".$ip);
-                }
-                //Getting Headers
-                foreach($config['general']['ports'] as $port){
-                    $host->exeHeaders($port);
                 }
             }
         }

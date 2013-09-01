@@ -25,7 +25,7 @@ function colorize($text, $status=null) {
 	  			$text = " - ".$text;
 	   			$out = "[0;32m"; //Green
 	   		break;
-	  		case "failure":
+	  		case "error":
 	   			$text = " ! ".$text;
 	   			$out = "[0;31m"; //Red
 	   		break;
@@ -110,24 +110,19 @@ function negotiate ($socket) {
 
 function curlHead($url) {
 	global $config;
+	echo colorize("<curlH> ".$url, "debug");
 	$ch = curl_init();
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
 	curl_setopt($ch, CURLOPT_URL, $url);
-	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20);
+	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $config['general']['timeout']);
+	curl_setopt($ch, CURLOPT_TIMEOUT, $config['general']['timeout']);
 	curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.11) Gecko/20071127 Firefox/2.0.0.11');
 	curl_setopt($ch, CURLOPT_HEADER, true);
-	curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'HEAD');
-	$statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+	curl_setopt($ch, CURLOPT_NOBODY, true);
 	$content = curl_exec($ch);
 	curl_close($ch);
 	if($content){
-		$return = array();
-		$return['status'] = $statusCode;
-		$return['server'] = get_between($content, "Server: ", "\n");
-		$return['xpowered'] = get_between($content, "X-Powered-By: ", "\n");
-		//debug
-		echo colorize("<curlH> ".$url, "debug");
-		return $return;
+		return $content;
 	}
 }
 
@@ -138,6 +133,82 @@ function get_between($string,$start,$end){
 	$ini += strlen($start);
 	$len = strpos($string, $end, $ini) - $ini;
 	return substr($string, $ini, $len);
+}
+
+function curl($url, $post="") {
+	global $config;
+	//debug
+	$print = "<curl> ".$url;
+	if($post){
+		$print .= " | ".$post;
+	}
+	echo colorize($print, "debug");
+	$ch = curl_init($url);
+	curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.11) Gecko/20071127 Firefox/2.0.0.11');
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt($ch, CURLOPT_URL, $url);
+	if($post){
+		curl_setopt($ch,CURLOPT_POST, 1);
+		curl_setopt($ch,CURLOPT_POSTFIELDS, $post);
+	}
+	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $config['general']['timeout']);
+	curl_setopt($ch, CURLOPT_TIMEOUT, $config['general']['timeout']);
+	$result = curl_exec($ch);
+	$statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+	curl_close($ch);
+	if($statusCode<400)
+		return $result;
+}
+
+function getLastEffectiveUrl($url, &$content=""){
+	global $config;
+	echo colorize("<curlLEU> ".$url, "debug");
+	$url = cleanHostUrl($url);
+	$ch = curl_init($url);
+	curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.11) Gecko/20071127 Firefox/2.0.0.11');
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $config['general']['timeout']);
+	curl_setopt($ch, CURLOPT_TIMEOUT, $config['general']['timeout']);
+	$result = strtolower(curl_exec($ch));
+	if($result===false){
+		curl_close($ch);
+		return null;
+	}
+	$redirectUrl = strtolower(curl_getinfo($ch, CURLINFO_EFFECTIVE_URL));
+	if($redirectUrl==$url){
+		if(strstr($result, 'http-equiv="refresh"')){
+			$r = get_between($result, 'url=', '">');
+			if($r[0]=="/"){
+				$redirectUrl = $url.$r;
+			}else{
+				$redirectUrl = $r;
+			}
+		}
+	}
+	curl_close($ch);
+	$redirectUrl = parse_url($redirectUrl);
+	$host = $redirectUrl['host'];
+	$content = $result;
+	return cleanHostUrl($host);
+}
+
+function cleanHostUrl($url){
+	$url = trim(strtolower($url));
+	if(strstr($url, "http://")){
+		$url = str_replace("http://","",$url);
+		$url = "http://".$url;
+	}elseif(strstr($url, "https://")){
+		$url = str_replace("https://","",$url);
+		$url = "https://".$url;
+	}else{
+		$url = "http://".$url;
+	}
+	if(substr($url, -1)!="/"){
+		$url .= "/";
+	}
+	return $url;
 }
 
 ?>

@@ -69,7 +69,7 @@ abstract class Model{
 			if($name==$this->idField) continue;
 			if(in_array($name,$this->reservedVars)) continue;
 			if(in_array($name,$this->reservedVarsChild)) continue;
-		    $values[$name] = $name."='".mysql_real_escape_string($this->$name)."'";
+		    $values[$name] = "`".$name."`"."='".mysql_real_escape_string($this->$name)."'";
 	    }
 	    //SQL
 	    $query = "UPDATE ".$this->dbTable." SET ".implode(" , ",$values)." WHERE ".$this->idField."=".(int)$this->id; 
@@ -77,6 +77,8 @@ abstract class Model{
 	    	//Post Update
 	    	$this->postUpdate();
 	    	return 1;
+	    }else{
+	    	echo colorize($db->getError(), "error");
 	    }
     }
 
@@ -93,7 +95,7 @@ abstract class Model{
 			if($name==$this->idField) continue;
 		   	if(in_array($name,$this->reservedVars)) continue;
 			if(in_array($name,$this->reservedVarsChild)) continue;
-		    $values1[$name] = $name;
+		    $values1[$name] = "`".$name."`";
 		    $values2[$name]=" '".mysql_real_escape_string($this->$name)."' ";
 		}
 		//SQL
@@ -104,7 +106,9 @@ abstract class Model{
 			//Post Insert
 			$this->postInsert();
 			return 1;
-		}
+		}else{
+	    	echo colorize($db->getError(), "error");
+	    }
     }
 }
 ?>
