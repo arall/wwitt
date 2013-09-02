@@ -1,4 +1,4 @@
-<? 
+<?php
 abstract class Model{
 	public static $className;
 	public static $dbTable;

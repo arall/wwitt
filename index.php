@@ -1,16 +1,25 @@
 <?php
 
 define("_EXE", 1);
+date_default_timezone_set('UTC');
 ini_set("display_errors", 1);
 error_reporting(E_ERROR | E_WARNING | E_PARSE);
 set_time_limit(0);
+
+/**
+* Requisites
+**/
+//CLI only
+if(php_sapi_name()!='cli'){
+    die("Run in CLI mode!");
+}
 
 /**
 * Config
 **/
 //Database
 $config['database']['host'] = "localhost";
-$config['database']['username'] = "root";
+$config['database']['user'] = "root";
 $config['database']['password'] = "";
 $config['database']['database'] = "wwitt";
 //Bing
