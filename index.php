@@ -14,7 +14,7 @@ $config['database']['username'] = "root";
 $config['database']['password'] = "";
 $config['database']['database'] = "wwitt";
 //Bing
-$config['bing']['maxPage'] = 1;
+$config['bing']['maxPage'] = 5;
 //General
 $config['general']['timeout'] = 1;
 $config['general']['vervose'] = 1; //0, 1, 2 (none, infos, debug)

@@ -91,47 +91,51 @@ class Host extends Model {
 	public function exePortScan(){
 		global $config;
 		//Define the target to scan
-		$target = array($this->ip);
-		$options = array('nmap_binary' => 'nmap');
-	    $nmap = new Net_Nmap($options);
-	    //Enable nmap options
-	    $nmap_options = array('os_detection' => true,
-	                          'service_info' => true,
-	                          'port_ranges' => implode(",", $config['general']['ports'])
-	                          );
-	    $nmap->enableOptions($nmap_options);
-	    //Scan target
-	    $res = @$nmap->scan($target);
-	    //Parse XML Output to retrieve Hosts Object
-	    $hosts = @$nmap->parseXMLOutput();
-	    //Print results
-	    if(count($hosts)){
-		    foreach ($hosts as $key => $h) {
-		        $hostname = $h->getHostname();
-		        if($hostname!="unknown"){
-		        	$this->hostname = $hostname;
-		        }
-		        $this->status = 1;
-		        $this->os = $h->getOS();
-		        $services = $h->getServices();
-		        $this->update();
-		        if(count($services)){
-			        foreach ($services as $key => $s) {
-			        	if($s->product){
-				            $service = new Service();
-				            $service->ipId = $this->id;
-				            $service->name = $s->name;
-				            $service->port =  $s->port;
-				            $service->protocol =  $s->protocol;
-				            $service->product =  $s->product;
-				            $service->version =  $s->version;
-				            $service->info = $s->extrainfo;
-				            $service->insert();
-				            echo colorize("Port ".$service->port.": ".$service->product." ".$service->version);
-			        	}
+		try {
+			$target = array($this->ip);
+			$options = array('nmap_binary' => 'nmap');
+		    $nmap = new Net_Nmap($options);
+		    //Enable nmap options
+		    $nmap_options = array('os_detection' => true,
+		                          'service_info' => true,
+		                          'port_ranges' => implode(",", $config['general']['ports'])
+		                          );
+		    $nmap->enableOptions($nmap_options);
+		    //Scan target
+		    $res = @$nmap->scan($target);
+		    //Parse XML Output to retrieve Hosts Object
+		    $hosts = @$nmap->parseXMLOutput();
+		    //Print results
+		    if(count($hosts)){
+			    foreach ($hosts as $key => $h) {
+			        $hostname = $h->getHostname();
+			        if($hostname!="unknown"){
+			        	$this->hostname = $hostname;
 			        }
+			        $this->status = 1;
+			        $this->os = $h->getOS();
+			        $services = $h->getServices();
+			        $this->update();
+			        if(count($services)){
+				        foreach ($services as $key => $s) {
+				        	if($s->product){
+					            $service = new Service();
+					            $service->ipId = $this->id;
+					            $service->name = $s->name;
+					            $service->port =  $s->port;
+					            $service->protocol =  $s->protocol;
+					            $service->product =  $s->product;
+					            $service->version =  $s->version;
+					            $service->info = $s->extrainfo;
+					            $service->insert();
+					            echo colorize("Port ".$service->port.": ".$service->product." ".$service->version);
+				        	}
+				        }
+				    }
 			    }
-		    }
+			}
+		} catch (Net_Nmap_Exception $ne) {
+		    echo $ne->getMessage();
 		}
 	}
 
