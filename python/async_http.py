@@ -28,6 +28,7 @@ class Async_HTTP(Thread):
 			self._retries = 0
 			self._request = ""
 			self._response = ""
+			self._redir = ""
 
 	# Required Worker method
 	def numPendingJobs(self):
@@ -119,6 +120,8 @@ class Async_HTTP(Thread):
 						ip = web._ip_solver.queryDNS(urlparse.urlparse(web._url).hostname)
 						if ip is not None:
 							web._ip = ip
+						else:  # Error at DNS solve, just stop
+							web._status = 97
 					
 					if web._ip != "":
 						# Connect and create socket
@@ -152,6 +155,8 @@ class Async_HTTP(Thread):
 								web._status = 0
 							else:
 								web._status = 99 # Stop retrying
+					except:
+						web._status = 99 # Stop retrying
 				if web._status == 2:
 					# Send request
 					if len(web._request) == 0:
@@ -178,11 +183,15 @@ class Async_HTTP(Thread):
 						if not read:
 							# Finish, parse redirects!
 							redir = self.redirect(web._response,web._url)
-							if redir is None:
+							if redir == web._redir:
+								# Loop!!
+								web._status = 95
+							elif redir is None:
 								web._status = 100
 							else:
 								web._url = redir
 								web._status = 0
+							web._redir = redir
 						else:
 							web._response += read
 					except:
@@ -195,6 +204,10 @@ class Async_HTTP(Thread):
 								web._status = 0
 							else:
 								web._status = 99 # Stop retrying
+								
+				if web._status > 50 and web._socket is not None:
+					web._socket.close()
+					web._socket = None
 
 			# Select sockets!
 			readers = []
@@ -212,6 +225,7 @@ class Async_HTTP(Thread):
 						writers.append(web._socket)
 						allready = False
 				if web._status == 0:
+					print web._status, web._socket, web._url, web._ourl
 					skipsel = True
 					allready = False
 
@@ -226,10 +240,10 @@ class Async_HTTP(Thread):
 
 			# If work is done, wait here for more work
 			if allready and not skipsel:
+				print "All ready"
 				self._waitsem.acquire()
 
 			# All waiting for DNS
-			print "dup"
 
 		print "LOG: Exit thread"
 

@@ -15,13 +15,14 @@ class DNS_Solver(Thread):
 		def __init__(self,host):
 			self._host = host
 			self._ip = ""
+			self._solving = True
 
 	# Required Worker method
 	def numPendingJobs(self):
 		self._queuelock.acquire()
 		num = 0
 		for dns in self._dnslist:
-			if dns._ip != "":
+			if not dns._solving:
 				num += 1
 		self._queuelock.release()
 		return num
@@ -71,24 +72,25 @@ class DNS_Solver(Thread):
 		ret = None
 		for dns in self._dnslist:
 			if dns._host == host:
-				ret = dns._ip
-				break
+				if dns._solving:
+					self._queuelock.release()
+					return ""
+				else:
+					self._queuelock.release()
+					return dns._ip
 		self._queuelock.release()
 
-		if ret is None:
-			self.addDNS([host])
-
-		return ret
+		self.addDNS([host])
+		return ""
 	
 	def work(self):
 		# Process all URLS and get their indices
 		while not self._end:
 			allready = True
-			print "dp2"
 
 			self._queuelock.acquire()
 			for dns in self._dnslist:
-				if dns._ip == "": # Query it!
+				if dns._solving: # Query it!
 					host = dns._host
 					allready = False
 					break
@@ -96,7 +98,6 @@ class DNS_Solver(Thread):
 
 			if not allready:
 				try:
-					print "querying ", host
 					ip = socket.gethostbyname(host)
 				except:
 					ip = None
@@ -105,6 +106,7 @@ class DNS_Solver(Thread):
 				for dns in self._dnslist:
 					if dns._host == host:
 						dns._ip = ip
+						dns._solving = False
 						break
 				self._queuelock.release()
 

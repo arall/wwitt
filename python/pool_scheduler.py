@@ -23,7 +23,7 @@ class Pool_Scheduler():
 
 	# Gets number of jobs still to finish
 	def numActiveJobs(self):
-		return ( x.numPendingJobs() for x in self._workers )
+		return sum( x.numPendingJobs() for x in self._workers )
 
 	# Stop all workers!
 	def finalize(self):
