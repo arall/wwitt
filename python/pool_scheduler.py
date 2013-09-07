@@ -16,7 +16,6 @@ class Pool_Scheduler():
 	# Jobs is a list of jobs to be distributed
 	def addWork(self,jobs):
 		while (len(jobs) != 0):
-			print len(jobs)
 			# Scheduler the work in the worker with less work
 			worker = min ( (x.numPendingJobs(),x) for x in self._workers ) [1]
 			worker.enqueueJobs( [jobs.pop()] )

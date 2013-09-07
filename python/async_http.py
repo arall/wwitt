@@ -100,7 +100,6 @@ class Async_HTTP(Thread):
 				ret = h[10:].strip()
 				if not("http:" in ret or "https:" in ret):
 					ret = url + ret
-				print "LOG: Found redir to " + ret
 				break
 		return ret
 	
@@ -225,7 +224,6 @@ class Async_HTTP(Thread):
 						writers.append(web._socket)
 						allready = False
 				if web._status == 0:
-					print web._status, web._socket, web._url, web._ourl
 					skipsel = True
 					allready = False
 
@@ -240,7 +238,6 @@ class Async_HTTP(Thread):
 
 			# If work is done, wait here for more work
 			if allready and not skipsel:
-				print "All ready"
 				self._waitsem.acquire()
 
 			# All waiting for DNS
