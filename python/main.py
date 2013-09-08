@@ -1,36 +1,79 @@
 
-import urllist
-import time
-import itertools
+import curses
+import wwiitt
 
-from pool_scheduler import Pool_Scheduler
-from async_http import Async_HTTP
-from dns_solver import DNS_Solver
-from port_scanner import Port_Scanner
-import ip_crawler
+def scaniprange(iprange):
+	banner()
+	workwindow.addstr(14,1,"  Scanning ip range " + iprange)
+	ips = iprange.split(" ")
+	wwiitt.ipscan(ips[0],ips[1],logwindow,workwindow,screen)
 
-# Main test
-dnspool = Pool_Scheduler(10,DNS_Solver)
-pool = Pool_Scheduler(4,Async_HTTP,dnspool)
-portscanpool = Pool_Scheduler(4,Port_Scanner,dnspool)
+screen = curses.initscr()
 
-# Generate IP range, and get VirtualHosts
-iplist = list(ip_crawler.iterateIPRange("5.135.0.0","5.135.255.255"))
-portlist = [21,22,25,80,443,8080]
-compoud_list = [ (x, portlist) for x in iplist ]
+# Create work windows and log window
+(nlines,ncols) = screen.getmaxyx()
+#print nlines,ncols
+logwindow  = screen.subwin(nlines-1,ncols/2,0,ncols/2)
+workwindow = screen.subwin(nlines-1,ncols/2,0,0)
+#logpad = screen.subpad(nlines-1,ncols/2)
 
-# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
-max_jobs = 900
-batch_size = 20
-while len(iplist) != 0:
-	nj = portscanpool.numActiveJobs()
-	while nj < max_jobs-batch_size:
-		portscanpool.addWork( compoud_list[:batch_size] )
-		compoud_list = compoud_list[batch_size:]
-		nj = portscanpool.numActiveJobs()
+def banner():
+	workwindow.clear()
+	workwindow.addstr(1 ,1,"  __      __  __      __  ______  ______  ______")
+	workwindow.addstr(2 ,1," /\ \  __/\ \/\ \  __/\ \/\__  _\/\__  _\/\__  _\ ")
+	workwindow.addstr(3 ,1," \ \ \/\ \ \ \ \ \/\ \ \ \/_/\ \/\/_/\ \/\/_/\ \/ ")
+	workwindow.addstr(4 ,1,"  \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \   \ \ \   \ \ \ ")
+	workwindow.addstr(5 ,1,"   \ \ \_/ \_\ \ \ \_/ \_\ \ \_\ \__ \ \ \   \ \ \ ")
+	workwindow.addstr(6 ,1,"    \ `\___x___/\ `\___x___/ /\_____\ \ \_\   \ \_\ ")
+	workwindow.addstr(7 ,1,"     '\/__//__/  '\/__//__/  \/_____/  \/_/    \/_/ ")
+	workwindow.addstr(9 ,1,"         World Wide Internet Takeover Tool")
+
+# Main window
+def mainwin():
+	banner()
+	workwindow.addstr(12,1,"    Select option:")
+	workwindow.addstr(14,1,"     1. Port scan")
+	workwindow.addstr(15,1,"     2. Virtualhost scan")
+	workwindow.addstr(16,1,"     3. HTTP index crawler")
+
+def portscanwin():
+	banner()
+	workwindow.addstr(14,1,"  Enter IP address range")
 	
-	print "Port scanning... ",nj, len(compoud_list)
-	time.sleep(1)
+def updatelog():
+	logwindow.border()
 
-portscanpool.wait()
+menu = 0
+while True:
+	if menu == 0:
+		mainwin()
+	elif menu == 1:
+		portscanwin()
+	else:
+		pass
+	
+	updatelog()
+	workwindow.border()
+	workwindow.redrawwin()
+	workwindow.refresh()
+	
+	#logpad.addstr(1,1,"uhuhuhu")
+	#logpad.refresh(0,0,0,0,10,10)
+	logwindow.redrawwin()
+	logwindow.refresh()
+	
+	userinput = ""
+	try:
+		userinput = screen.getstr(nlines-1,0)
+	except:
+		break
+	
+	if menu == 0:
+		menu = int(userinput)
+	elif menu == 1:
+		scaniprange(userinput)
+		menu = 0
+	userinput = ""
+
+curses.endwin()
 

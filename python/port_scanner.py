@@ -9,6 +9,17 @@ import errno
 from threading import Thread
 from threading import Semaphore
 
+def selectwrapper(read, write, erro, timeout):
+	p = select.poll()
+	alls = list(set(read)|set(write)|set(erro))
+	for fd in alls:
+		mask = 0
+		if fd in read: mask |= select.POLLIN
+		if fd in write: mask |= select.POLLOUT
+		if fd in erro: mask |= select.POLLERR
+		p.register(fd,mask)
+	p.poll(timeout*1000)
+
 class Port_Scanner(Thread):
 
 	class ip_item:
@@ -131,7 +142,7 @@ class Port_Scanner(Thread):
 			
 			self._queuelock.release()
 			
-			if not allready: select.select([],socketlist,socketlist,1)
+			if not allready: selectwrapper([],socketlist,socketlist,1)
 			
 			if allready and self._exit_on_end: break
 			
