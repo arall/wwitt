@@ -40,6 +40,7 @@ class Pool_Scheduler():
 	def wait(self):
 		for w in self._workers:
 			w.waitEnd()
+			w.join()
 
 	# Get emptiest worker
 	def getWorkerInstance(self):

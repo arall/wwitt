@@ -43,6 +43,7 @@ def ipscan(ipfrom,ipto,log,info,screen):
 		time.sleep(1)
 
 	portscanpool.wait()
+	dnspool.wait()
 	
 	curses.nocbreak()
 	screen.nodelay(False);
