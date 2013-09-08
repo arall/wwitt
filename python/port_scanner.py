@@ -27,10 +27,11 @@ class Port_Scanner(Thread):
 			self._host = host
 			self._ip = ""
 			self._ports = []
+			self._db = False
 			self._dns_solver = dns
 			for p in ports:
-				# Port, Socket, Status, Retries
-				self._ports.append([p,None,"",0,0])
+				# Port, Socket, Status, Retries, DB
+				self._ports.append([p,None,"",0,0,False])
 
 	# Required Worker method
 	def numPendingJobs(self):
@@ -57,11 +58,12 @@ class Port_Scanner(Thread):
 		self.join()
 	
 	# URL_list is a list of complete URLs such as http://hst.com:80/path
-	def __init__(self, dns_pool):
+	def __init__(self, dns_pool, dbi = None):
 		super(Port_Scanner, self).__init__()
 		
 		self._scanlist = []
 		self._dnspool = dns_pool
+		self._db = dbi
 
 		self._waitsem = Semaphore(1)
 		self._queuelock = Semaphore(1)
@@ -139,6 +141,9 @@ class Port_Scanner(Thread):
 								
 					if porttuple[2] == "":
 						socketlist.append(porttuple[1])
+
+			if self._db is not None:
+				self.updateDB()
 			
 			self._queuelock.release()
 			
@@ -150,5 +155,18 @@ class Port_Scanner(Thread):
 				self._waitsem.acquire()
 
 		print "LOG: Exit thread"
+
+	def updateDB(self):
+		for target in self._scanlist:
+			if not target._db:
+				ipi = {"ip": target._ip}
+				self._db.insert("hosts",ipi)
+				target._db = True
+			for porttuple in target._ports:
+				if not porttuple[5] and porttuple[2] == "open":
+					porti = {"port": porttuple[0]}
+					self._db.insert("services",porti)
+					porttuple[5] = True
+
 
 

@@ -10,6 +10,7 @@ from async_http import Async_HTTP
 from dns_solver import DNS_Solver
 from port_scanner import Port_Scanner
 import ip_crawler
+from db_interface import DBInterface
 
 
 print "  __      __  __      __  ______  ______  ______"
@@ -37,8 +38,9 @@ if option == "portscan":
 	ports  = [ int(x) for x in sys.argv[4:] ]
 	if len(ports) == 0: ports = [21,22,25,80,443,8080]
 	
+	db = DBInterface()
 	dnspool = Pool_Scheduler(10,DNS_Solver)
-	portscanpool = Pool_Scheduler(4,Port_Scanner,dnspool)
+	portscanpool = Pool_Scheduler(4,Port_Scanner,dnspool,db)
 
 	iplist = list(ip_crawler.iterateIPRange(ipfrom,ipto))
 	compoud_list = [ (x, ports) for x in iplist ]
