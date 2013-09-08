@@ -5,20 +5,10 @@
 import socket
 import select
 import time
+import datetime
 import errno
 from threading import Thread
 from threading import Semaphore
-
-def selectwrapper(read, write, erro, timeout):
-	p = select.poll()
-	alls = list(set(read)|set(write)|set(erro))
-	for fd in alls:
-		mask = 0
-		if fd in read: mask |= select.POLLIN
-		if fd in write: mask |= select.POLLOUT
-		if fd in erro: mask |= select.POLLERR
-		p.register(fd,mask)
-	p.poll(timeout*1000)
 
 class Port_Scanner(Thread):
 
@@ -31,7 +21,7 @@ class Port_Scanner(Thread):
 			self._dns_solver = dns
 			for p in ports:
 				# Port, Socket, Status, Retries, DB
-				self._ports.append([p,None,"",0,0,False])
+				self._ports.append([p,None,"",0,0,False,""])
 
 	# Required Worker method
 	def numPendingJobs(self):
@@ -39,7 +29,7 @@ class Port_Scanner(Thread):
 		num = 0
 		for target in self._scanlist:
 			for port in target._ports:
-				if port[2] == "":
+				if port[2] == "" or port[1] is not None:
 					num += 1
 		self._queuelock.release()
 		return num
@@ -71,6 +61,7 @@ class Port_Scanner(Thread):
 		self._exit_on_end = False
 		
 		self._connection_timeout = 5  # CONNECTION TIMEOUT
+		self._banner_timeout = 10     # BANNER TIMEOUT
 		self._connection_retries = 2  # RETRIES
 
 	def run(self):
@@ -97,12 +88,38 @@ class Port_Scanner(Thread):
 			allready = True
 
 			self._queuelock.acquire()
-			socketlist = []
+			plist = select.poll()
 			for target in self._scanlist:
 				for porttuple in target._ports:
+					if porttuple[2] != "" and porttuple[1] is None: continue
+					
+					if porttuple[2] == "open":
+						# Query the banner!
+						endc = False
+						plist.register(porttuple[1],select.POLLERR|select.POLLIN)
+						try:
+							read = porttuple[1].recv(1024*1024)
+							if not read:
+								porttuple[2] = "read"
+								endc = True
+							else:
+								porttuple[6] += read
+						except:
+							if err != errno.EAGAIN and err != errno.EINPROGRESS:
+								endc = True
+						if time.time() - porttuple[4] > self._banner_timeout:
+							endc = True
+						
+						if endc:
+							porttuple[1].close()
+							porttuple[1] = None
+							porttuple[2] = "read"
+						continue
+						
 					if porttuple[2] != "":
 						if porttuple[1] is not None:
 							porttuple[1].close()
+							porttuple[1] = None
 						continue
 					
 					allready = False
@@ -121,10 +138,12 @@ class Port_Scanner(Thread):
 						porttuple[1] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 						porttuple[1].setblocking(0)
 						porttuple[4] = time.time()
+					
 					# Connect
 					try:
 						porttuple[1].connect((host, port))
 						porttuple[2] = "open"
+						plist.register(porttuple[1],select.POLLERR|select.POLLIN)
 					except socket.error, e:
 						err = e.args[0]
 						cerr = False
@@ -141,14 +160,14 @@ class Port_Scanner(Thread):
 								porttuple[2] = "closed"
 								
 					if porttuple[2] == "":
-						socketlist.append(porttuple[1])
+						plist.register(porttuple[1],select.POLLERR|select.POLLOUT)
 
 			if self._db is not None:
 				self.updateDB()
 			
 			self._queuelock.release()
 			
-			if not allready: selectwrapper([],socketlist,socketlist,1)
+			if not allready: plist.poll(1000)
 			
 			if allready and self._exit_on_end: break
 			
@@ -158,14 +177,17 @@ class Port_Scanner(Thread):
 		print "LOG: Exit thread"
 
 	def updateDB(self):
+		da = str(datetime.datetime.now())
 		for target in self._scanlist:
 			if not target._db and target._ip != "":
-				ipi = {"ip": target._ip}
+				ipi = {"ip": target._ip, "dateAdd":da, "dateUpdate":da}
 				target._ipid = self._db.insert("hosts",ipi)
 				target._db = True
 			for porttuple in target._ports:
-				if not porttuple[5] and porttuple[2] == "open":
-					porti = {"port": porttuple[0],"ipId": target._ipid}
+				if not porttuple[5] and porttuple[2] in ["open","read"] and porttuple[1] is None:
+					porti = {"port": porttuple[0],"ipId": target._ipid, "dateAdd":da}
+					if porttuple[2] == "read":
+						porti["head"] = porttuple[6]
 					self._db.insert("services",porti)
 					porttuple[5] = True
 
