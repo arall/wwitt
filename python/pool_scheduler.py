@@ -17,8 +17,15 @@ class Pool_Scheduler():
 	def addWork(self,jobs):
 		while (len(jobs) != 0):
 			# Scheduler the work in the worker with less work
-			worker = min ( (x.numPendingJobs(),x) for x in self._workers ) [1]
-			worker.enqueueJobs( [jobs.pop()] )
+			#worker = min ( (x.numPendingJobs(),x) for x in self._workers ) [1]
+			listw = sorted ( (x.numPendingJobs(),x) for x in self._workers )
+			first = listw[0][0]
+			numpush = 1
+			if len(listw) > 1:
+				second = listw[1][0]
+				numpush = second-first+1
+			listw[0][1].enqueueJobs( jobs[-numpush:] )
+			jobs = jobs[:-numpush]
 
 	# Gets number of jobs still to finish
 	def numActiveJobs(self):
