@@ -111,6 +111,7 @@ class Port_Scanner(Thread):
 						if target._ip is None:
 							porttuple[2] = "error"
 							continue
+						if target._ip == "": continue
 					
 					host = target._ip
 					port = porttuple[0]
