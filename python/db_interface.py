@@ -16,10 +16,12 @@ class DBInterface():
 		print "INSERT INTO "+table+" (" + (",".join(dic.keys())) + ") VALUES (" + (",".join(values)) + ")"
 		cursor.execute("INSERT INTO "+table+" (" + (",".join(dic.keys())) + ") VALUES (" + (",".join(values)) + ")")
 		cursor.close()
+		self.db.commit()
 	
 	def select(self,table,cond):
 		cursor = self.db.cursor()
 		conds =  [ x + "=" + ('"'+x+'"' if type(x) is not int else str(x)) for x in cond.keys() ]
 		cursor.execute("SELECT * FROM "+table+" WHERE " + (" AND ".join(conds)) + ") VALUES (" + (",".join(values)) + ")")
 		cursor.close()
+		self.db.commit()
 
