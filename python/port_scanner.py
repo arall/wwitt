@@ -190,6 +190,15 @@ class Port_Scanner(Thread):
 						porti["head"] = porttuple[6]
 					self._db.insert("services",porti)
 					porttuple[5] = True
+		# Remove done stuff
+		for target in self._scanlist:
+			for porttuple in list(target._ports):
+				if porttuple[5]:
+					target._ports.remove(porttuple)
+		for target in list(self._scanlist):
+			if len(target._ports) == 0:
+				self._scanlist.remove(target)
+		
 
 
 
