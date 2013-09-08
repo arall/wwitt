@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import itertools
+import signal
 
 from pool_scheduler import Pool_Scheduler
 from async_http import Async_HTTP
@@ -11,6 +12,10 @@ from dns_solver import DNS_Solver
 from port_scanner import Port_Scanner
 import ip_crawler
 from db_interface import DBInterface
+
+def termhand():
+	sys.exit(0)
+signal.signal(signal.SIGTERM, termhand)
 
 
 print "  __      __  __      __  ______  ______  ______"

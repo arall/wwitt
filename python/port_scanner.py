@@ -158,13 +158,13 @@ class Port_Scanner(Thread):
 
 	def updateDB(self):
 		for target in self._scanlist:
-			if not target._db:
+			if not target._db and target._ip != "":
 				ipi = {"ip": target._ip}
-				self._db.insert("hosts",ipi)
+				target._ipid = self._db.insert("hosts",ipi)
 				target._db = True
 			for porttuple in target._ports:
 				if not porttuple[5] and porttuple[2] == "open":
-					porti = {"port": porttuple[0]}
+					porti = {"port": porttuple[0],"ipId": target._ipid}
 					self._db.insert("services",porti)
 					porttuple[5] = True
 

@@ -15,16 +15,18 @@ class DBInterface():
 	def insert(self,table,dic):
 		self._lock.acquire()
 		cursor = self.db.cursor()
-		values = [ '"'+x+'"' if type(x) is not int else str(x) for x in dic.values() ]
+		values = [ '"'+x+'"' if type(x) is str else str(x) for x in dic.values() ]
 		cursor.execute("INSERT INTO "+table+" (" + (",".join(dic.keys())) + ") VALUES (" + (",".join(values)) + ")")
+		ret = cursor.lastrowid
 		cursor.close()
 		self.db.commit()
 		self._lock.release()
+		return ret
 	
 	def select(self,table,cond):
 		self._lock.acquire()
 		cursor = self.db.cursor()
-		conds =  [ x + "=" + ('"'+x+'"' if type(x) is not int else str(x)) for x in cond.keys() ]
+		conds =  [ x + "=" + ('"'+x+'"' if type(x) is str else str(x)) for x in cond.keys() ]
 		cursor.execute("SELECT * FROM "+table+" WHERE " + (" AND ".join(conds)) + ") VALUES (" + (",".join(values)) + ")")
 		cursor.close()
 		self.db.commit()
