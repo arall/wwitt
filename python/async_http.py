@@ -145,7 +145,7 @@ class Async_HTTP(Thread):
 						web._request+= "\r\n"
 					except socket.error, e:
 						err = e.args[0]
-						if err == errno.EAGAIN or err == errno.EINPROGRESS:
+						if err == errno.EAGAIN or err == errno.EINPROGRESS or err == errno.EALREADY:
 							# Just try again after some time
 							pass
 						else:
