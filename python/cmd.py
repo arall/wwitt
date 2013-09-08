@@ -56,7 +56,8 @@ if option == "portscan":
 	try:
 		while len(compoud_list) != 0:
 			nj = portscanpool.numActiveJobs()
-			while nj < max_jobs-batch_size and len(compoud_list) != 0:
+			t = time.time()
+			while nj < max_jobs-batch_size and len(compoud_list) != 0 and time.time()-t < 10:
 				portscanpool.addWork( compoud_list[:batch_size] )
 				compoud_list = compoud_list[batch_size:]
 				nj = portscanpool.numActiveJobs()
