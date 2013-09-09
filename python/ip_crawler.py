@@ -3,6 +3,9 @@
 # Crawls a range of IPs and performs port scanning
 
 import urllib
+import datetime
+import re
+import urlparse
 
 # Generates ip iteration from ip range
 def iterateIPRange(ipfrom,ipto):
@@ -25,12 +28,29 @@ def getHostlist(ip):
 	ret = []
 	for n in range(0,50,10):
 		search = "IP: " + str(ip)
-		search = urllib.urlencode(search)
-		url = 'http://www.bing.com/search?q=' + search + "&first=" + str(n);
+		search = urllib.urlencode({'q':search, 'first':n})
+		url = 'http://www.bing.com/search?' + search
 		ret.append(url)
 	return ret
 
 # Parses Bing page to get the virtualhosts for a given IP
-def parseBing():
-	pass
+def parseBing(url,body,db):
+	if "no_results" in body:
+		# Do nothing!
+		return
+
+	ip = re.findall("IP%3A\+([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*)",url)[0]
+	
+	# Lazy match (match as many as possible)
+	regexp = '<div.*?class="sb_meta".*?>.*?<cite>(.*?)</cite>'
+	matches = re.findall(regexp,body)
+
+	# Now get hostname for each one and put into database
+	hosts = [ urlparse.urlparse("http://"+x).hostname for x in matches ]
+
+	ipid = list(db.select("hosts","id",{"ip":ip}))[0]
+
+	for h in hosts:
+		db.insert("virtualhosts",{'ipId':ipid, 'host':h, 'dateAdd':str(datetime.datetime.now())})
+	
 

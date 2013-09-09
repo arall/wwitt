@@ -29,6 +29,7 @@ class Async_HTTP(Thread):
 			self._request = ""
 			self._response = ""
 			self._redir = ""
+			self._time = 0
 
 	# Required Worker method
 	def numPendingJobs(self):
@@ -54,10 +55,12 @@ class Async_HTTP(Thread):
 		self.join()
 	
 	# URL_list is a list of complete URLs such as http://hst.com:80/path
-	def __init__(self,dnspool,URL_list = []):
+	def __init__(self,dnspool,db = None, callback = (lambda: None),URL_list = []):
 		super(Async_HTTP, self).__init__()
 
 		self._urllist = []
+		self._db = db
+		self._callback = callback
 		for url in URL_list:
 			self._urllist.append(Async_HTTP.web_item(url))
 
@@ -124,9 +127,12 @@ class Async_HTTP(Thread):
 					
 					if web._ip != "":
 						# Connect and create socket
+						if web._socket is not None:
+							web._socket.close()
 						web._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 						web._socket.setblocking(0)
 						web._status = 1
+						web._time = time.time()
 				if web._status == 1:
 					# Check connection completeness
 					try:
@@ -134,7 +140,7 @@ class Async_HTTP(Thread):
 						if (port is None): port = 80
 						else: port = int(port)
 
-						path = urlparse.urlparse(web._url).path
+						path = urlparse.urlparse(web._url).path + "?" + urlparse.urlparse(web._url).query
 						if path is None or path == "": path = "/"
 
 						web._socket.connect((web._ip, port))
@@ -187,9 +193,11 @@ class Async_HTTP(Thread):
 								web._status = 95
 							elif redir is None:
 								web._status = 100
+								self._callback(web._url,web._response,self._db)
 							else:
 								web._url = redir
 								web._status = 0
+								web._ip = ""
 							web._redir = redir
 						else:
 							web._response += read
@@ -203,44 +211,46 @@ class Async_HTTP(Thread):
 								web._status = 0
 							else:
 								web._status = 99 # Stop retrying
-								
+				
+				if time.time()-web._time > 5:
+					web._status = 99
 				if web._status > 50 and web._socket is not None:
 					web._socket.close()
 					web._socket = None
 
 			# Select sockets!
-			readers = []
-			writers = []
-			errs = []
 			allready = True
 			skipsel = False
+			onesocket = False
+			plist = select.poll()
 			for web in self._urllist:
 				if web._socket is not None and web._status < 50:
-					errs.append(web._socket)
 					if web._status == 3:
-						readers.append(web._socket)
+						plist.register(web._socket,select.POLLERR|select.POLLIN)
 						allready = False
 					elif web._status == 1 or web._status == 2:
-						writers.append(web._socket)
+						plist.register(web._socket,select.POLLERR|select.POLLOUT)
 						allready = False
+					else:
+						plist.register(web._socket,select.POLLERR)
+					onesocket = True
 				if web._status == 0:
 					skipsel = True
 					allready = False
-
 
 			self._queuelock.release() # Now we could potentially add/remove webs
 
 			if allready and self._exit_on_end: break
 
 			# Do not waiting if all complete or webs in state 0
-			if not allready and not skipsel: select.select(readers,writers,errs,1)
-			elif len(errs) == 0: time.sleep(1)
+			if not allready and not skipsel: plist.poll(1000)
+			elif onesocket: time.sleep(1)
 
 			# If work is done, wait here for more work
 			if allready and not skipsel:
 				self._waitsem.acquire()
 
-			# All waiting for DNS
+			# All waiting for DNS, redirs...
 
 		print "LOG: Exit thread"
 
