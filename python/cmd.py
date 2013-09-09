@@ -67,7 +67,7 @@ if option == "portscan":
 	
 			print ("%.2f" % ((1-float(len(compoud_list)*len(ports) + nj)/(len(iplist)*len(ports)))*100)), " % completed ..."
 			time.sleep(1)
-	except:
+	except KeyboardInterrupt, e:
 		portscanpool.finalize()
 		dnspool.finalize()
 
@@ -115,18 +115,12 @@ elif option == "virtualhosts":
 	dnspool.wait()
 	
 elif option == "httpcrawl":
-	ipfrom = sys.argv[2]
-	ipto   = sys.argv[3]
-	ports  = [ int(x) for x in sys.argv[4:] ]
-	if len(ports) == 0: ports = [80,443,8080]
-	
 	db = DBInterface()
 	dnspool = Pool_Scheduler(10,DNS_Solver)
-	httppool = Pool_Scheduler(10,Async_HTTP,dnspool,db)
+	httppool = Pool_Scheduler(10,Async_HTTP,dnspool,db,ip_crawler.index_query)
 
-	iplist = list(ip_crawler.iterateIPRange(ipfrom,ipto))
-	dbips = db.select("hosts","ip")
-	compoud_list = [ (x, ports) for x in dbips if x in iplist ]
+	vhosts = list(db.select("virtualhosts","host"))
+	compoud_list = [ "http://" + x + "/" for x in vhosts ]
 	
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
 	max_jobs = 3500
@@ -141,9 +135,9 @@ elif option == "httpcrawl":
 				compoud_list = compoud_list[batch_size:]
 				nj = httppool.numActiveJobs()
 	
-			print ("%.2f" % ((1-float(len(compoud_list)*len(ports) + nj)/(len(iplist)*len(ports)))*100)), " % completed ..."
+			print ("%.2f" % ((1-float(len(compoud_list) + nj)/(len(vhosts)))*100)), " % completed ..."
 			time.sleep(1)
-	except:
+	except KeyboardInterrupt, e:
 		httppool.finalize()
 		dnspool.finalize()
 
