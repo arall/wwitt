@@ -54,6 +54,7 @@ def parseBing(url,ourl,body,db):
 		db.insert("virtualhosts",{'ipId':ipid, 'host':h, 'dateAdd':str(datetime.datetime.now())})
 	
 def index_query(url,ourl,body,db):
+	print "Got index",url
 	host = urlparse.urlparse(ourl).hostname
 	body_head = body.split("\r\n\r\n",1)[0]
 	body_body = body.split("\r\n\r\n",1)[1]

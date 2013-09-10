@@ -35,7 +35,7 @@ if len(sys.argv) == 1:
 	print "Options:"
 	print " portscan ipfrom ipto [port list]"
 	print " virtualhosts ipfrom ipto"
-	print " httpcrawl ipfrom ipto [port list]"
+	print " httpcrawl [re-scan]"
 	sys.exit(1)
 
 option = sys.argv[1]
@@ -115,11 +115,14 @@ elif option == "virtualhosts":
 	dnspool.wait()
 	
 elif option == "httpcrawl":
+	rescan = False
+	if len(sys.argv) >= 3:
+		if sys.argv[2] == "1": rescan = True
 	db = DBInterface()
 	dnspool = Pool_Scheduler(10,DNS_Solver)
 	httppool = Pool_Scheduler(10,Async_HTTP,dnspool,db,ip_crawler.index_query)
 
-	vhosts = list(db.select("virtualhosts","host"))
+	vhosts = list(db.select("virtualhosts","host",{"head":"$NULL$"}))
 	compoud_list = [ "http://" + x + "/" for x in vhosts ]
 	
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)

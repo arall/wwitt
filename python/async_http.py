@@ -99,7 +99,7 @@ class Async_HTTP(Thread):
 		ll = head.split("\r\n")
 		ret = None
 		for h in ll:
-			if "Location: " in h:
+			if "Location: " in h[:10]:
 				ret = h[10:].strip()
 				if not("http:" in ret or "https:" in ret):
 					ret = url + ret
@@ -140,7 +140,9 @@ class Async_HTTP(Thread):
 						if (port is None): port = 80
 						else: port = int(port)
 
-						path = urlparse.urlparse(web._url).path + "?" + urlparse.urlparse(web._url).query
+						path = urlparse.urlparse(web._url).path
+						param = urlparse.urlparse(web._url).query
+						if param != "": path += param
 						if path is None or path == "": path = "/"
 
 						web._socket.connect((web._ip, port))

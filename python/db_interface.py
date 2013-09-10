@@ -32,9 +32,19 @@ class DBInterface():
 		return ret
 	
 	def select(self,table,fields = "*",cond = {}):
-		conds =  [ str(x) + "=" + '"'+MySQLdb.escape_string(str(cond[x]))+'"' for x in cond.keys() ]
+		c_eq = { x:cond[x]            for x in cond if "!" not in x and "$" not in x and cond[x] != "$NULL$" }
+		c_neq= { x.strip("!"):cond[x] for x in cond if "!" in x and cond[x] != "$NULL$" }   # Not equal conditions
+		c_isn= { x:cond[x]            for x in cond if "!" not in x and "$" not in x and cond[x] == "$NULL$" }
+		c_non= { x.strip("!"):cond[x] for x in cond if "!" in x and cond[x] == "$NULL$" }   # Not equal conditions
+		
+		c1 = [ str(x) + "=" + '"'+MySQLdb.escape_string(str( c_eq[x]))+'"' for x in c_eq.keys()  ]
+		c2 = [ str(x) + "<>"+ '"'+MySQLdb.escape_string(str(c_neq[x]))+'"' for x in c_neq.keys() ]
+		c3 = [ str(x) + " is null"     for x in c_isn.keys() ]
+		c4 = [ str(x) + " is not null" for x in c_non.keys() ]
+		allc = c1+c2+c3+c4
+
 		query = "SELECT "+fields+" FROM "+table
-		if (len(conds) != 0): query += " WHERE " + (" AND ".join(conds))
+		if (len(allc) != 0): query += " WHERE " + (" AND ".join(allc))
 
 		self._lock.acquire()
 		try:
