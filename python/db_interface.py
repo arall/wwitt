@@ -13,26 +13,37 @@ class DBInterface():
 		self._lock = Semaphore(1)
 		
 	def insert(self,table,dic):
-		self._lock.acquire()
-		cursor = self.db.cursor()
 		values = [ "'"+MySQLdb.escape_string(str(x))+"'" for x in dic.values() ]
-		cursor.execute("INSERT INTO "+table+" (" + (",".join(dic.keys())) + ") VALUES (" + (",".join(values)) + ")")
-		ret = cursor.lastrowid
-		cursor.close()
-		self.db.commit()
+		query = "INSERT INTO "+table+" (" + (",".join(dic.keys())) + ") VALUES (" + (",".join(values)) + ")"
+
+		self._lock.acquire()
+		try:
+			cursor = self.db.cursor()
+			cursor.execute(query)
+			ret = cursor.lastrowid
+			cursor.close()
+			self.db.commit()
+		except Exception, err:
+			pass
+
 		self._lock.release()
 		return ret
 	
 	def select(self,table,fields = "*",cond = {}):
-		self._lock.acquire()
-		cursor = self.db.cursor()
 		conds =  [ str(x) + "=" + '"'+str(cond[x])+'"' for x in cond.keys() ]
 		query = "SELECT "+fields+" FROM "+table
 		if (len(conds) != 0): query += " WHERE " + (" AND ".join(conds))
-		cursor.execute(query)
-		ret = cursor.fetchall()
-		cursor.close()
-		self.db.commit()
+
+		self._lock.acquire()
+		try:
+			cursor = self.db.cursor()
+			cursor.execute(query)
+			ret = cursor.fetchall()
+			cursor.close()
+			self.db.commit()
+		except:
+			pass
+
 		self._lock.release()
 
 		# If only one filed, convert lists of lists to list

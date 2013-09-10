@@ -17,7 +17,6 @@ class Pool_Scheduler():
 	def addWork(self,jobs):
 		while (len(jobs) != 0):
 			# Scheduler the work in the worker with less work
-			#worker = min ( (x.numPendingJobs(),x) for x in self._workers ) [1]
 			listw = sorted ( (x.numPendingJobs(),x) for x in self._workers )
 			first = listw[0][0]
 			numpush = 1

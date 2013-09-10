@@ -93,8 +93,8 @@ elif option == "virtualhosts":
 	
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
 	print "Starting ..."
-	max_jobs = 3
-	batch_size = 1
+	max_jobs = 30
+	batch_size = 5
 	totalj = len(compoud_list)
 	try:
 		while len(compoud_list) != 0:
