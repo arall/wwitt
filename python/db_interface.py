@@ -18,13 +18,15 @@ class DBInterface():
 
 		self._lock.acquire()
 		try:
+			ret = None
 			cursor = self.db.cursor()
 			cursor.execute(query)
 			ret = cursor.lastrowid
-			cursor.close()
-			self.db.commit()
 		except Exception, err:
 			pass
+
+		cursor.close()
+		self.db.commit()
 
 		self._lock.release()
 		return ret
