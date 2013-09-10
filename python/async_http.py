@@ -142,7 +142,7 @@ class Async_HTTP(Thread):
 
 						path = urlparse.urlparse(web._url).path
 						param = urlparse.urlparse(web._url).query
-						if param != "": path += param
+						if param != "": path += "?" + param
 						if path is None or path == "": path = "/"
 
 						web._socket.connect((web._ip, port))

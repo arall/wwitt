@@ -51,6 +51,7 @@ def parseBing(url,ourl,body,db):
 	ipid = list(db.select("hosts","id",{"ip":ip}))[0]
 
 	for h in hosts:
+		print "Virtualhost:",h
 		db.insert("virtualhosts",{'ipId':ipid, 'host':h, 'dateAdd':str(datetime.datetime.now())})
 	
 def index_query(url,ourl,body,db):
