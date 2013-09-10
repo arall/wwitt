@@ -32,7 +32,7 @@ class DBInterface():
 		return ret
 	
 	def select(self,table,fields = "*",cond = {}):
-		conds =  [ str(x) + "=" + '"'+str(cond[x])+'"' for x in cond.keys() ]
+		conds =  [ str(x) + "=" + '"'+MySQLdb.escape_string(str(cond[x]))+'"' for x in cond.keys() ]
 		query = "SELECT "+fields+" FROM "+table
 		if (len(conds) != 0): query += " WHERE " + (" AND ".join(conds))
 
@@ -52,5 +52,25 @@ class DBInterface():
 		if (len(fields.split(",")) == 1):
 			return ( x[0] for x in ret )
 		return ret
+
+	def update(self,table,cond = {},values = {}):
+		conds =  [ table+"."+str(x) + "=" + '"'+MySQLdb.escape_string(str(cond[x]))  +'"' for x in cond.keys() ]
+		vals  =  [ table+"."+str(x) + "=" + '"'+MySQLdb.escape_string(str(values[x]))+'"' for x in values.keys() ]
+		query = "UPDATE "+table+" "
+		query += " SET " + (" , ".join(vals))
+		if (len(conds) != 0): query += " WHERE " + (" AND ".join(conds))
+
+		self._lock.acquire()
+		try:
+			cursor = self.db.cursor()
+			cursor.execute(query)
+			cursor.fetchall()
+		except:
+			pass
+
+		cursor.close()
+		self.db.commit()
+		self._lock.release()
+
 
 

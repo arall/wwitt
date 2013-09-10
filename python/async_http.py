@@ -193,7 +193,8 @@ class Async_HTTP(Thread):
 								web._status = 95
 							elif redir is None:
 								web._status = 100
-								self._callback(web._url,web._response,self._db)
+								self._callback(url = web._url, ourl = web._ourl,
+												body = web._response, db = self._db)
 							else:
 								web._url = redir
 								web._status = 0

@@ -34,7 +34,7 @@ def getHostlist(ip):
 	return ret
 
 # Parses Bing page to get the virtualhosts for a given IP
-def parseBing(url,body,db):
+def parseBing(url,ourl,body,db):
 	if "no_results" in body:
 		# Do nothing!
 		return
@@ -53,8 +53,11 @@ def parseBing(url,body,db):
 	for h in hosts:
 		db.insert("virtualhosts",{'ipId':ipid, 'host':h, 'dateAdd':str(datetime.datetime.now())})
 	
-def index_query(url,body,db):
-	print "Queryed",url
-	pass
+def index_query(url,ourl,body,db):
+	host = urlparse.urlparse(ourl).hostname
+	body_head = body.split("\r\n\r\n",1)[0]
+	body_body = body.split("\r\n\r\n",1)[1]
+	db.update("virtualhosts",{'host':host},{"head":body_head, "index":body_body, "url":url})
+
 
 
