@@ -18,24 +18,24 @@ def termhand():
 signal.signal(signal.SIGTERM, termhand)
 
 
-print "  __      __  __      __  ______  ______  ______"
-print " /\ \  __/\ \/\ \  __/\ \/\__  _\/\__  _\/\__  _\ "
-print " \ \ \/\ \ \ \ \ \/\ \ \ \/_/\ \/\/_/\ \/\/_/\ \/ "
-print "  \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \   \ \ \   \ \ \ "
-print "   \ \ \_/ \_\ \ \ \_/ \_\ \ \_\ \__ \ \ \   \ \ \ "
-print "    \ `\___x___/\ `\___x___/ /\_____\ \ \_\   \ \_\ "
-print "     '\/__//__/  '\/__//__/  \/_____/  \/_/    \/_/ "
-print ""
-print "         World Wide Internet Takeover Tool"
-print ""
+print( "  __      __  __      __  ______  ______  ______" )
+print( " /\ \  __/\ \/\ \  __/\ \/\__  _\/\__  _\/\__  _\ " )
+print( " \ \ \/\ \ \ \ \ \/\ \ \ \/_/\ \/\/_/\ \/\/_/\ \/ " )
+print( "  \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \   \ \ \   \ \ \ " )
+print( "   \ \ \_/ \_\ \ \ \_/ \_\ \ \_\ \__ \ \ \   \ \ \ " )
+print( "    \ `\___x___/\ `\___x___/ /\_____\ \ \_\   \ \_\ " )
+print( "     '\/__//__/  '\/__//__/  \/_____/  \/_/    \/_/ " )
+print( "" )
+print( "         World Wide Internet Takeover Tool" )
+print( "" )
 
 if len(sys.argv) == 1:
-	print "Usage: " + sys.argv[0] + " option [params]"
-	print ""
-	print "Options:"
-	print " portscan ipfrom ipto [port list]"
-	print " virtualhosts ipfrom ipto"
-	print " httpcrawl [re-scan]"
+	print( "Usage: " + sys.argv[0] + " option [params]" )
+	print( "" )
+	print( "Options:" )
+	print( " portscan ipfrom ipto [port list]" )
+	print( " virtualhosts ipfrom ipto" )
+	print( " httpcrawl [re-scan]" )
 	sys.exit(1)
 
 option = sys.argv[1]
@@ -55,7 +55,7 @@ if option == "portscan":
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
 	max_jobs = 3500
 	batch_size = 50
-	print "Starting ..."
+	print( "Starting ..." )
 	try:
 		while len(compoud_list) != 0:
 			nj = portscanpool.numActiveJobs()
@@ -65,7 +65,7 @@ if option == "portscan":
 				compoud_list = compoud_list[batch_size:]
 				nj = portscanpool.numActiveJobs()
 	
-			print ("%.2f" % ((1-float(len(compoud_list)*len(ports) + nj)/(len(iplist)*len(ports)))*100)), " % completed ..."
+			print( ("%.2f" % ((1-float(len(compoud_list)*len(ports) + nj)/(len(iplist)*len(ports)))*100)), " % completed ..." )
 			time.sleep(1)
 	except KeyboardInterrupt, e:
 		portscanpool.finalize()
@@ -92,7 +92,7 @@ elif option == "virtualhosts":
 		compoud_list += ip_crawler.getHostlist(ip)
 	
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
-	print "Starting ..."
+	print( "Starting ..." )
 	max_jobs = 30
 	batch_size = 5
 	totalj = len(compoud_list)
@@ -105,7 +105,7 @@ elif option == "virtualhosts":
 				compoud_list = compoud_list[batch_size:]
 				nj = httppool.numActiveJobs()
 	
-			print ("%.2f" % ((1-float(len(compoud_list) + nj)/(totalj))*100)), " % completed ..."
+			print( ("%.2f" % ((1-float(len(compoud_list) + nj)/(totalj))*100)), " % completed ..." )
 			time.sleep(1)
 	except KeyboardInterrupt, e:
 		httppool.finalize()
@@ -128,7 +128,7 @@ elif option == "httpcrawl":
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
 	max_jobs = 3500
 	batch_size = 50
-	print "Starting ..."
+	print( "Starting ..." )
 	try:
 		while len(compoud_list) != 0:
 			nj = httppool.numActiveJobs()
@@ -138,7 +138,7 @@ elif option == "httpcrawl":
 				compoud_list = compoud_list[batch_size:]
 				nj = httppool.numActiveJobs()
 	
-			print ("%.2f" % ((1-float(len(compoud_list) + nj)/(len(vhosts)))*100)), " % completed ..."
+			print( ("%.2f" % ((1-float(len(compoud_list) + nj)/(len(vhosts)))*100)), " % completed ..." )
 			time.sleep(1)
 	except KeyboardInterrupt, e:
 		httppool.finalize()

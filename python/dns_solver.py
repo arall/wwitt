@@ -115,6 +115,6 @@ class DNS_Solver(Thread):
 			if allready:
 				self._waitsem.acquire()
 
-		print "LOG: Exit thread"
+		print ("LOG: Exit thread")
 
 

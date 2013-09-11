@@ -174,7 +174,7 @@ class Port_Scanner(Thread):
 			if allready:
 				self._waitsem.acquire()
 
-		print "LOG: Exit thread"
+		print ("LOG: Exit thread")
 
 	def updateDB(self):
 		da = str(datetime.datetime.now())
