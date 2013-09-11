@@ -79,8 +79,8 @@ elif option == "virtualhosts":
 	ipto   = sys.argv[3]
 
 	db = DBInterface()
-	dnspool = Pool_Scheduler(10,DNS_Solver)
-	httppool = Pool_Scheduler(10,Async_HTTP,dnspool,db,ip_crawler.parseVHosts)
+	dnspool = Pool_Scheduler(3,DNS_Solver)
+	httppool = Pool_Scheduler(3,Async_HTTP,dnspool,db,ip_crawler.parseVHosts)
 
 	iplist = list(ip_crawler.iterateIPRange(ipfrom,ipto))
 	dbips = db.select("hosts","ip")
@@ -121,7 +121,7 @@ elif option == "httpcrawl":
 		if sys.argv[2] == "1": rescan = True
 	db = DBInterface()
 	dnspool = Pool_Scheduler(10,DNS_Solver)
-	httppool = Pool_Scheduler(10,Async_HTTP,dnspool,db,ip_crawler.index_query)
+	httppool = Pool_Scheduler(2,Async_HTTP,dnspool,db,ip_crawler.index_query)
 
 	vhosts = list(set(list(db.select("virtualhosts","host",{"head":"$NULL$"}))))
 	compoud_list = [ "http://" + x + "/" for x in vhosts ]

@@ -230,6 +230,10 @@ class Async_HTTP(Thread):
 					web._socket.close()
 					web._socket = None
 
+			for web in list(self._urllist):
+				if web._status > 50:
+					self._urllist.remove(web)
+
 			# Select sockets!
 			allready = True
 			onesocket = False

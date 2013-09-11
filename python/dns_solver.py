@@ -4,6 +4,7 @@
 
 import socket
 import select
+import time
 from threading import Thread
 from threading import Semaphore
 
@@ -16,6 +17,7 @@ class DNS_Solver(Thread):
 			self._host = host
 			self._ip = ""
 			self._solving = True
+			self._time = time.time()
 
 	# Required Worker method
 	def numPendingJobs(self):
@@ -77,6 +79,7 @@ class DNS_Solver(Thread):
 					return ""
 				else:
 					self._queuelock.release()
+					dns._time = time.time() # Refresh timeout!
 					return dns._ip
 		self._queuelock.release()
 
@@ -89,6 +92,11 @@ class DNS_Solver(Thread):
 			allready = True
 
 			self._queuelock.acquire()
+			# Timeout delete!
+			for dns in list(self._dnslist):
+				if time.time()-dns._time > 30:
+					self._dnslist.remove(dns)
+
 			for dns in self._dnslist:
 				if dns._solving: # Query it!
 					host = dns._host
