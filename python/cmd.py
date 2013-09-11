@@ -67,7 +67,7 @@ if option == "portscan":
 	
 			print( ("%.2f" % ((1-float(len(compoud_list)*len(ports) + nj)/(len(iplist)*len(ports)))*100)), " % completed ..." )
 			time.sleep(1)
-	except KeyboardInterrupt, e:
+	except KeyboardInterrupt as e:
 		portscanpool.finalize()
 		dnspool.finalize()
 
@@ -107,7 +107,7 @@ elif option == "virtualhosts":
 	
 			print( ("%.2f" % ((1-float(len(compoud_list) + nj)/(totalj))*100)), " % completed ..." )
 			time.sleep(1)
-	except KeyboardInterrupt, e:
+	except KeyboardInterrupt as e:
 		httppool.finalize()
 		dnspool.finalize()
 
@@ -128,7 +128,7 @@ elif option == "httpcrawl":
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
 	max_jobs = 3500
 	batch_size = 50
-	print( "Starting ..." )
+	print( "Starting ...", len(compoud_list), "jobs" )
 	try:
 		while len(compoud_list) != 0:
 			nj = httppool.numActiveJobs()
@@ -140,7 +140,7 @@ elif option == "httpcrawl":
 	
 			print( ("%.2f" % ((1-float(len(compoud_list) + nj)/(len(vhosts)))*100)), " % completed ..." )
 			time.sleep(1)
-	except KeyboardInterrupt, e:
+	except KeyboardInterrupt as e:
 		httppool.finalize()
 		dnspool.finalize()
 

@@ -17,7 +17,7 @@ class Pool_Scheduler():
 	def addWork(self,jobs):
 		while (len(jobs) != 0):
 			# Scheduler the work in the worker with less work
-			listw = sorted ( (x.numPendingJobs(),x) for x in self._workers )
+			listw = sorted ( ((x.numPendingJobs(),x) for x in self._workers) , key = lambda o: o[0] )
 			first = listw[0][0]
 			numpush = 1
 			if len(listw) > 1:
@@ -43,6 +43,6 @@ class Pool_Scheduler():
 
 	# Get emptiest worker
 	def getWorkerInstance(self):
-		return min ( (x.numPendingJobs(),x) for x in self._workers ) [1]
+		return min ( ((x.numPendingJobs(),x) for x in self._workers),  key = lambda o: o[0] ) [1]
 
 

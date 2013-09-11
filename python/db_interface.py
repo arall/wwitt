@@ -1,5 +1,5 @@
 
-import MySQLdb
+import mysql.connector
 from threading import Semaphore
 
 dbuser = "wwitt"
@@ -9,20 +9,20 @@ dbname = "wwitt"
 
 class DBInterface():
 	def __init__(self):
-		self.db = MySQLdb.connect(dbhost,dbuser,dbpass,dbname)
+		self.db = mysql.connector.connect(host=dbhost,user=dbuser,password=dbpass,database=dbname)
 		self._lock = Semaphore(1)
 		
 	def insert(self,table,dic):
-		values = [ "'"+MySQLdb.escape_string(str(x))+"'" for x in dic.values() ]
-		query = "INSERT INTO "+table+" (" + (",".join(dic.keys())) + ") VALUES (" + (",".join(values)) + ")"
+		values = [ str(x) for x in dic.values() ]
+		query = "INSERT INTO "+table+" (" + (",".join(dic.keys())) + ") VALUES (" + (",".join(['%s']*len(values))) + ")"
 
 		self._lock.acquire()
 		try:
 			ret = None
 			cursor = self.db.cursor()
-			cursor.execute(query)
+			cursor.execute(query,values)
 			ret = cursor.lastrowid
-		except Exception, err:
+		except Exception as err:
 			pass
 
 		cursor.close()
@@ -37,23 +37,26 @@ class DBInterface():
 		c_isn= { x:cond[x]            for x in cond if "!" not in x and "$" not in x and cond[x] == "$NULL$" }
 		c_non= { x.strip("!"):cond[x] for x in cond if "!" in x and cond[x] == "$NULL$" }   # Not equal conditions
 		
-		c1 = [ str(x) + "=" + '"'+MySQLdb.escape_string(str( c_eq[x]))+'"' for x in c_eq.keys()  ]
-		c2 = [ str(x) + "<>"+ '"'+MySQLdb.escape_string(str(c_neq[x]))+'"' for x in c_neq.keys() ]
-		c3 = [ str(x) + " is null"     for x in c_isn.keys() ]
-		c4 = [ str(x) + " is not null" for x in c_non.keys() ]
+		c1 = [ (str(x) + "= %s", str(c_eq[x])) for x in c_eq.keys()  ]
+		c2 = [ (str(x) + "<> %s", str(c_neq[x])) for x in c_neq.keys() ]
+		c3 = [ (str(x) + " is null","")     for x in c_isn.keys() ]
+		c4 = [ (str(x) + " is not null","") for x in c_non.keys() ]
 		allc = c1+c2+c3+c4
+		queryc = [ x[0] for x in (c1+c2+c3+c4) ]
+		queryv = [ x[1] for x in (c1+c2) ]
 
 		query = "SELECT "+fields+" FROM "+table
-		if (len(allc) != 0): query += " WHERE " + (" AND ".join(allc))
+		if (len(allc) != 0): query += " WHERE " + (" AND ".join(queryc))
 
 		self._lock.acquire()
 		try:
 			cursor = self.db.cursor()
-			cursor.execute(query)
+			cursor.execute(query,queryv)
 			ret = cursor.fetchall()
 			cursor.close()
 			self.db.commit()
-		except:
+		except Exception as e:
+			print ("Error!",e)
 			pass
 
 		self._lock.release()
@@ -64,8 +67,8 @@ class DBInterface():
 		return ret
 
 	def update(self,table,cond = {},values = {}):
-		conds =  [ table+"."+str(x) + "=" + '"'+MySQLdb.escape_string(str(cond[x]))  +'"' for x in cond.keys() ]
-		vals  =  [ table+"."+str(x) + "=" + '"'+MySQLdb.escape_string(str(values[x]))+'"' for x in values.keys() ]
+		conds =  [ table+"."+str(x) + "= %s " for x in cond.keys() ]
+		vals  =  [ table+"."+str(x) + "= %s " for x in values.keys() ]
 		query = "UPDATE "+table+" "
 		query += " SET " + (" , ".join(vals))
 		if (len(conds) != 0): query += " WHERE " + (" AND ".join(conds))
@@ -73,9 +76,9 @@ class DBInterface():
 		self._lock.acquire()
 		try:
 			cursor = self.db.cursor()
-			cursor.execute(query)
-			cursor.fetchall()
-		except:
+			cursor.execute( query, list(values.values()) + list(cond.values()) )
+		except Exception as e:
+			print ("DB ERROR",e)
 			pass
 
 		cursor.close()

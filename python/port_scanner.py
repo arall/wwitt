@@ -144,7 +144,7 @@ class Port_Scanner(Thread):
 						porttuple[1].connect((host, port))
 						porttuple[2] = "open"
 						plist.register(porttuple[1],select.POLLERR|select.POLLIN)
-					except socket.error, e:
+					except socket.error as e:
 						err = e.args[0]
 						cerr = False
 						if err == errno.EAGAIN or err == errno.EINPROGRESS or err == errno.EALREADY:

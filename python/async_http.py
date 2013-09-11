@@ -5,8 +5,9 @@
 
 import socket
 import time
+import traceback
 import select
-import urlparse
+import urllib.parse
 import errno
 from threading import Thread
 from threading import Semaphore
@@ -95,14 +96,14 @@ class Async_HTTP(Thread):
 		return ret
 
 	def redirect(self,content,url):
-		head = content.split("\r\n\r\n")[0]
-		ll = head.split("\r\n")
+		head = content.split(b"\r\n\r\n")[0]
+		ll = head.split(b"\r\n")
 		ret = None
 		for h in ll:
-			if "Location: " in h[:10]:
+			if b"Location: " in h[:10]:
 				ret = h[10:].strip()
-				if not("http:" in ret or "https:" in ret):
-					ret = url + ret
+				if not(b"http:" in ret or b"https:" in ret):
+					ret = url.encode('utf-8') + ret
 				break
 		return ret
 	
@@ -112,14 +113,14 @@ class Async_HTTP(Thread):
 			self._queuelock.acquire()  # Lock webs queue
 
 			for web in self._urllist:
-				if urlparse.urlparse(web._url).scheme == "https": web._status = 98
+				if urllib.parse.urlparse(web._url).scheme == "https": web._status = 98
 				if web._status == 0:
 					# Resolve IP
 					if web._ip == "":
 						if web._ip_solver is None:
 							web._ip_solver = self._dns_solver.getWorkerInstance()
 
-						ip = web._ip_solver.queryDNS(urlparse.urlparse(web._url).hostname)
+						ip = web._ip_solver.queryDNS(urllib.parse.urlparse(web._url).hostname)
 						if ip is not None:
 							web._ip = ip
 						else:  # Error at DNS solve, just stop
@@ -136,22 +137,23 @@ class Async_HTTP(Thread):
 				if web._status == 1:
 					# Check connection completeness
 					try:
-						port = urlparse.urlparse(web._url).port
+						port = urllib.parse.urlparse(web._url).port
 						if (port is None): port = 80
 						else: port = int(port)
 
-						path = urlparse.urlparse(web._url).path
-						param = urlparse.urlparse(web._url).query
+						path = urllib.parse.urlparse(web._url).path
+						param = urllib.parse.urlparse(web._url).query
 						if param != "": path += "?" + param
 						if path is None or path == "": path = "/"
 
 						web._socket.connect((web._ip, port))
 						web._status = 2 # Connection OK!
 						web._request = "GET " + path + " HTTP/1.0\r\n"
-						web._request+= "Host: " + urlparse.urlparse(web._url).hostname + "\r\n"
+						web._request+= "Host: " + urllib.parse.urlparse(web._url).hostname + "\r\n"
 						web._request+= "User-Agent: Mozilla/5.0 (X11; Linux i686; rv:23.0) Gecko/20100101 Firefox/23.0\r\n"
 						web._request+= "\r\n"
-					except socket.error, e:
+						web._request = bytes(web._request, "UTF-8")
+					except socket.error as e:
 						err = e.args[0]
 						if err == errno.EAGAIN or err == errno.EINPROGRESS or err == errno.EALREADY:
 							# Just try again after some time
@@ -168,12 +170,12 @@ class Async_HTTP(Thread):
 					# Send request
 					if len(web._request) == 0:
 						web._status = 3
-						web._response = ""
+						web._response = b""
 					else:
 						try:
 							sent = web._socket.send(web._request)
 							web._request = web._request[sent:]
-						except:
+						except Exception as e:
 							if err == errno.EAGAIN or err == errno.EINPROGRESS:
 								# Just try again after some time
 								pass
@@ -203,8 +205,8 @@ class Async_HTTP(Thread):
 								web._ip = ""
 							web._redir = redir
 						else:
-							web._response += read
-					except:
+							web._response = web._response + read
+					except Exception as e:
 						if err == errno.EAGAIN or err == errno.EINPROGRESS:
 							# Just try again after some time
 							pass
@@ -255,6 +257,6 @@ class Async_HTTP(Thread):
 
 			# All waiting for DNS, redirs...
 
-		print "LOG: Exit thread"
+		print ("LOG: Exit thread")
 
 
