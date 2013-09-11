@@ -30,6 +30,7 @@ class Async_HTTP(Thread):
 			self._request = ""
 			self._response = ""
 			self._redir = ""
+			self._redirn = 0
 			self._time = 0
 
 	# Required Worker method
@@ -105,7 +106,9 @@ class Async_HTTP(Thread):
 				if not(b"http:" in ret or b"https:" in ret):
 					ret = url.encode('utf-8') + ret
 				break
-		return ret
+		if ret:
+			return ret.decode("utf-8",errors='ignore')
+		return None
 	
 	def work(self):
 		# Process all URLS and get their indices
@@ -164,7 +167,7 @@ class Async_HTTP(Thread):
 								web._status = 0
 							else:
 								web._status = 99 # Stop retrying
-					except:
+					except Exception as e:
 						web._status = 99 # Stop retrying
 				if web._status == 2:
 					# Send request
@@ -176,6 +179,7 @@ class Async_HTTP(Thread):
 							sent = web._socket.send(web._request)
 							web._request = web._request[sent:]
 						except Exception as e:
+							err = e.args[0]
 							if err == errno.EAGAIN or err == errno.EINPROGRESS:
 								# Just try again after some time
 								pass
@@ -192,8 +196,8 @@ class Async_HTTP(Thread):
 						if not read:
 							# Finish, parse redirects!
 							redir = self.redirect(web._response,web._url)
-							if redir == web._redir:
-								# Loop!!
+							if redir == web._redir or web._redirn > 10:
+								# Loop!! (or 10 steps...)
 								web._status = 95
 							elif redir is None:
 								web._status = 100
@@ -203,10 +207,13 @@ class Async_HTTP(Thread):
 								web._url = redir
 								web._status = 0
 								web._ip = ""
+								web._time = time.time()
+								web._redirn += 1
 							web._redir = redir
 						else:
 							web._response = web._response + read
 					except Exception as e:
+						err = e.args[0]
 						if err == errno.EAGAIN or err == errno.EINPROGRESS:
 							# Just try again after some time
 							pass
@@ -217,7 +224,7 @@ class Async_HTTP(Thread):
 							else:
 								web._status = 99 # Stop retrying
 				
-				if time.time()-web._time > 5 and web._socket is not None:
+				if time.time()-web._time > 10 and web._socket is not None:
 					web._status = 99
 				if web._status > 50 and web._socket is not None:
 					web._socket.close()
@@ -225,7 +232,6 @@ class Async_HTTP(Thread):
 
 			# Select sockets!
 			allready = True
-			skipsel = False
 			onesocket = False
 			plist = select.poll()
 			for web in self._urllist:
@@ -240,7 +246,6 @@ class Async_HTTP(Thread):
 						plist.register(web._socket,select.POLLERR)
 					onesocket = True
 				if web._status == 0:
-					skipsel = True
 					allready = False
 
 			self._queuelock.release() # Now we could potentially add/remove webs
@@ -248,11 +253,12 @@ class Async_HTTP(Thread):
 			if allready and self._exit_on_end: break
 
 			# Do not waiting if all complete or webs in state 0
-			if not allready and not skipsel: plist.poll(1000)
-			elif onesocket: time.sleep(1)
+			if not allready:
+				if onesocket: plist.poll(1000)
+				else: time.sleep(1)
 
 			# If work is done, wait here for more work
-			if allready and not skipsel:
+			if allready:
 				self._waitsem.acquire()
 
 			# All waiting for DNS, redirs...

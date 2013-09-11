@@ -33,6 +33,17 @@ def getHostlist(ip):
 		ret.append(url)
 	return ret
 
+# Gets the URL list to query hosts for a given IP
+def getHostlistDT(ip):
+	url = 'http://reverseip.domaintools.com/search/?q=' + ip
+	return [url]
+
+def parseVHosts(url,ourl,body,db):
+	if "bing" in url:
+		parseBing(url,ourl,body,db)
+	else:
+		parseDT(url,ourl,body,db)
+
 # Parses Bing page to get the virtualhosts for a given IP
 def parseBing(url,ourl,body,db):
 	if b"no_results" in body:
@@ -52,7 +63,31 @@ def parseBing(url,ourl,body,db):
 		ipid = list(db.select("hosts","id",{"ip":ip}))[0]
 
 		for h in hosts:
-			print( "Virtualhost:",h,"for ip:",ip)
+			print( "Virtualhost (BING):",h,"for ip:",ip)
+			db.insert("virtualhosts",{'ipId':ipid, 'host':h, 'dateAdd':str(datetime.datetime.now())})
+	except Exception as e:
+		print(e)
+
+# Parses Bing page to get the virtualhosts for a given IP
+def parseDT(url,ourl,body,db):
+	if b"n-error-container" in body:
+		# Do nothing!
+		return
+
+	try:
+		ip = re.findall("q=([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*)",url)[0]
+	
+		# Lazy match (match as many as possible)
+		regexp = b'<span.*?title="[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*".*?>(.*?)</span>'
+		matches = re.findall(regexp,body)
+
+		# Now get hostname for each one and put into database
+		hosts = [ urllib.parse.urlparse("http://"+x.decode("utf-8",errors='ignore')).hostname for x in matches ]
+
+		ipid = list(db.select("hosts","id",{"ip":ip}))[0]
+
+		for h in hosts:
+			print( "Virtualhost (DT):",h,"for ip:",ip)
 			db.insert("virtualhosts",{'ipId':ipid, 'host':h, 'dateAdd':str(datetime.datetime.now())})
 	except Exception as e:
 		print(e)

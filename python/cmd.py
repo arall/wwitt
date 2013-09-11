@@ -80,7 +80,7 @@ elif option == "virtualhosts":
 
 	db = DBInterface()
 	dnspool = Pool_Scheduler(10,DNS_Solver)
-	httppool = Pool_Scheduler(10,Async_HTTP,dnspool,db,ip_crawler.parseBing)
+	httppool = Pool_Scheduler(10,Async_HTTP,dnspool,db,ip_crawler.parseVHosts)
 
 	iplist = list(ip_crawler.iterateIPRange(ipfrom,ipto))
 	dbips = db.select("hosts","ip")
@@ -90,10 +90,11 @@ elif option == "virtualhosts":
 	compoud_list = []
 	for ip in qip:
 		compoud_list += ip_crawler.getHostlist(ip)
+		compoud_list += ip_crawler.getHostlistDT(ip)
 	
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
 	print( "Starting ..." )
-	max_jobs = 30
+	max_jobs = 40
 	batch_size = 5
 	totalj = len(compoud_list)
 	try:
@@ -122,7 +123,7 @@ elif option == "httpcrawl":
 	dnspool = Pool_Scheduler(10,DNS_Solver)
 	httppool = Pool_Scheduler(10,Async_HTTP,dnspool,db,ip_crawler.index_query)
 
-	vhosts = list(db.select("virtualhosts","host",{"head":"$NULL$"}))
+	vhosts = list(set(list(db.select("virtualhosts","host",{"head":"$NULL$"}))))
 	compoud_list = [ "http://" + x + "/" for x in vhosts ]
 	
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
