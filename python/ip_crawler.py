@@ -91,16 +91,31 @@ def parseDT(url,ourl,body,db):
 			db.insert("virtualhosts",{'ipId':ipid, 'host':h, 'dateAdd':str(datetime.datetime.now())})
 	except Exception as e:
 		print(e)
+
+def http_code(head):
+	regexp = b'HTTP.*? ([0-9]+)'
+	matches = re.findall(regexp,head)
+	if len(matches) > 0:
+		return int(matches[0].decode("utf-8",errors='ignore'))
+	return 0
 	
 def index_query(url,ourl,body,db):
 	try:
 		host = urllib.parse.urlparse(ourl).hostname
+		chunks = body.split(b"\r\n\r\n",1)
 		body_head = body.split(b"\r\n\r\n",1)[0]
-		body_body = body.split(b"\r\n\r\n",1)[1]
+		if len(chunks) > 1: body_body = body.split(b"\r\n\r\n",1)[1]
+		else: body_body = ""
 		print ("Got index",ourl)
 	except Exception as e:
 		print (e)
-	db.update("virtualhosts",{'host':host},{"head":body_head, "index":body_body, "url":url})
+
+	if url[-10:] == "robots.txt":
+		if http_code(body_head) == 404:
+			body_body = ""
+		db.update("virtualhosts",{'host':host},{"robots":body_body})
+	else:
+		db.update("virtualhosts",{'host':host},{"head":body_head, "index":body_body, "url":url})
 
 
 

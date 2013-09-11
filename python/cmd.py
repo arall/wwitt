@@ -35,7 +35,7 @@ if len(sys.argv) == 1:
 	print( "Options:" )
 	print( " portscan ipfrom ipto [port list]" )
 	print( " virtualhosts ipfrom ipto" )
-	print( " httpcrawl [re-scan]" )
+	print( " httpcrawl [robots=True] [re-scan]" )
 	sys.exit(1)
 
 option = sys.argv[1]
@@ -117,15 +117,23 @@ elif option == "virtualhosts":
 	
 elif option == "httpcrawl":
 	rescan = False
+	robots = False
 	if len(sys.argv) >= 3:
-		if sys.argv[2] == "1": rescan = True
+		if sys.argv[2] == "1": robots = True
+	if len(sys.argv) >= 4:
+		if sys.argv[3] == "1": rescan = True
 	db = DBInterface()
 	dnspool = Pool_Scheduler(10,DNS_Solver)
 	httppool = Pool_Scheduler(2,Async_HTTP,dnspool,db,ip_crawler.index_query)
 
 	vhosts = list(set(list(db.select("virtualhosts","host",{"head":"$NULL$"}))))
 	compoud_list = [ "http://" + x + "/" for x in vhosts ]
-	
+
+	vhosts_r = []
+	if robots:
+		vhosts_r = list(set(list(db.select("virtualhosts","host",{"robots":"$NULL$"}))))
+		compoud_list += [ "http://" + x + "/robots.txt" for x in vhosts_r ]
+
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
 	max_jobs = 3500
 	batch_size = 50
@@ -139,7 +147,7 @@ elif option == "httpcrawl":
 				compoud_list = compoud_list[batch_size:]
 				nj = httppool.numActiveJobs()
 	
-			print( ("%.2f" % ((1-float(len(compoud_list) + nj)/(len(vhosts)))*100)), " % completed ..." )
+			print( ("%.2f" % ((1-float(len(compoud_list) + nj)/(len(vhosts)+len(vhosts_r)))*100)), " % completed ..." )
 			time.sleep(1)
 	except KeyboardInterrupt as e:
 		httppool.finalize()
