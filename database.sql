@@ -53,9 +53,9 @@ CREATE TABLE IF NOT EXISTS `virtualhosts` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
   `ipId` int(10) DEFAULT '0',
   `host` varchar(50) DEFAULT NULL,
-  `url` varchar(250) DEFAULT NULL,
+  `url` varchar(512) DEFAULT NULL,
   `head` text,
-  `index` text,
+  `index` BLOB,
   `dateAdd` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `ipId_host` (`ipId`,`host`)
