@@ -58,7 +58,7 @@ def parseBing(url,ourl,body,db):
 		matches = re.findall(regexp,body)
 
 		# Now get hostname for each one and put into database
-		hosts = [ urllib.parse.urlparse("http://"+x.decode("utf-8",errors='ignore')).hostname for x in matches ]
+		hosts = [ urllib.parse.urlparse("http://"+x.decode("utf-8",'ignore')).hostname for x in matches ]
 
 		ipid = list(db.select("hosts","id",{"ip":ip}))[0]
 
@@ -82,7 +82,7 @@ def parseDT(url,ourl,body,db):
 		matches = re.findall(regexp,body)
 
 		# Now get hostname for each one and put into database
-		hosts = [ urllib.parse.urlparse("http://"+x.decode("utf-8",errors='ignore')).hostname for x in matches ]
+		hosts = [ urllib.parse.urlparse("http://"+x.decode("utf-8",'ignore')).hostname for x in matches ]
 
 		ipid = list(db.select("hosts","id",{"ip":ip}))[0]
 
@@ -96,7 +96,7 @@ def http_code(head):
 	regexp = b'HTTP.*? ([0-9]+)'
 	matches = re.findall(regexp,head)
 	if len(matches) > 0:
-		return int(matches[0].decode("utf-8",errors='ignore'))
+		return int(matches[0].decode("utf-8",'ignore'))
 	return 0
 	
 def index_query(url,ourl,body,db):

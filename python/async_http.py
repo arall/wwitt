@@ -107,7 +107,7 @@ class Async_HTTP(Thread):
 					ret = url.encode('utf-8') + ret
 				break
 		if ret:
-			return ret.decode("utf-8",errors='ignore')
+			return ret.decode("utf-8",'ignore')
 		return None
 	
 	def work(self):
@@ -201,8 +201,7 @@ class Async_HTTP(Thread):
 								web._status = 95
 							elif redir is None:
 								web._status = 100
-								self._callback(url = web._url, ourl = web._ourl,
-												body = web._response, db = self._db)
+								self._callback(web._url, web._ourl, web._response, self._db)
 							else:
 								web._url = redir
 								web._status = 0
