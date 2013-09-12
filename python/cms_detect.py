@@ -30,14 +30,17 @@ def detectCMS(entries):
 
 		# Analyze index generator field
 		####################
-		index = web['index']
-		if index:
-			generator = re.match('<meta.*?name="generator".*?/>',index,re.IGNORECASE)
+		if web['index']:
+			index = web['index'].lower()
+			#print (index)
+			generator = re.search('(<meta.*?name="generator".*?>)',index,re.IGNORECASE)
 			if generator:
-				generator = generator.group()
-				content = re.match('<meta.*?content="(.*)".*?/>',generator,re.IGNORECASE)
+				generator = generator.group(1)
+				content = re.search('<meta.*?content="(.*?)".*?/>',generator,re.IGNORECASE)
+				if content: content = content.group(1)
+				else: content = ""
 
-				for keywork in ["drupal","wordpress","joomla","xwiki","mediawiki"]:
+				for keyword in ["drupal","wordpress","joomla","xwiki","mediawiki"]:
 					if keyword in content:
 						generator_cms_type = keyword
 						break
