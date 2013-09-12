@@ -6,6 +6,7 @@ def detectCMS(entries):
 	for web in entries:
 		robots_cms_type = "unknown"
 		generator_cms_type = "unknown"
+		header_cms_type = "unknown"
 
 		# Analyze robots.txt
 		####################
@@ -28,11 +29,21 @@ def detectCMS(entries):
 			if "disallow: /?q=user/password/" in robots:
 				robots_cms_type = "drupal"
 
-		# Analyze index generator field
+			# phpBB has modrewrite rules also
+			if "disallow: /privmsg" in robots and "disallow: /modcp" in robots and "disallow: /post" in robots:
+				robots_cms_type = "phpbb"
+			if "disallow: /privmsg.php" in robots and "disallow: /modcp.php" in robots and "disallow: /posting.php" in robots:
+				robots_cms_type = "phpbb"
+
+			# Prestashop contains a link to the web and some funny disallows
+			if "prestashop.com" in robots or "disallow: /*id_currency=" in robots:
+				robots_cms_type = "prestashop"
+
+
+		# Analyze index generator html field
 		####################
 		if web['index']:
 			index = web['index'].lower()
-			#print (index)
 			generator = re.search('(<meta.*?name="generator".*?>)',index,re.IGNORECASE)
 			if generator:
 				generator = generator.group(1)
@@ -44,6 +55,16 @@ def detectCMS(entries):
 					if keyword in content:
 						generator_cms_type = keyword
 						break
+
+		# Analyze index header
+		####################
+		if web['header']:
+			header = web['header'].lower()
+			if re.search("set-cookie:[^\n]*phpbb",header):
+				header_cms_type = 'phpbb'
+
+		
+
 
 		print ("Web " + web['host'] + " is " + robots_cms_type + " / " + generator_cms_type)
 
