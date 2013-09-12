@@ -11,6 +11,7 @@ from async_http import Async_HTTP
 from dns_solver import DNS_Solver
 from port_scanner import Port_Scanner
 import ip_crawler
+import cms_detect
 from db_interface import DBInterface
 
 def termhand():
@@ -155,5 +156,11 @@ elif option == "httpcrawl":
 
 	httppool.wait()
 	dnspool.wait()
+
+elif option == "cmsdetect":
+	db = DBInterface()
+	vhosts = db.select("virtualhosts")
+	
+	cms_detect.detectCMS(vhosts)
 
 

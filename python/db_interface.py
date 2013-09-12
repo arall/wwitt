@@ -6,6 +6,13 @@ dbuser = "wwitt"
 dbpass = "112233w"
 dbhost = "127.0.0.1"
 dbname = "wwitt"
+ 
+class MySQLCursorDict(mysql.connector.cursor.MySQLCursor):
+	def _row_to_python(self, rowdata, desc=None):
+		row = super(MySQLCursorDict, self)._row_to_python(rowdata, desc)
+		if row:
+			return dict(zip(self.column_names, row))
+		return None
 
 class DBInterface():
 	def __init__(self):
@@ -48,11 +55,17 @@ class DBInterface():
 		query = "SELECT "+fields+" FROM "+table
 		if (len(allc) != 0): query += " WHERE " + (" AND ".join(queryc))
 
+		onecol = (len(fields.split(",")) == 1 and fields != "*")
 		self._lock.acquire()
 		try:
-			cursor = self.db.cursor()
+			if onecol:
+				cursor = self.db.cursor()
+			else:
+				cursor = self.db.cursor(cursor_class=MySQLCursorDict)
 			cursor.execute(query,queryv)
 			ret = cursor.fetchall()
+			if onecol:
+				ret = ( x[0] for x in ret )
 			cursor.close()
 			self.db.commit()
 		except Exception as e:
@@ -61,9 +74,6 @@ class DBInterface():
 
 		self._lock.release()
 
-		# If only one filed, convert lists of lists to list
-		if (len(fields.split(",")) == 1):
-			return ( x[0] for x in ret )
 		return ret
 
 	def update(self,table,cond = {},values = {}):
