@@ -47,8 +47,8 @@ if option == "portscan":
 	if len(ports) == 0: ports = [21,22,25,80,443,8080]
 	
 	db = DBInterface()
-	dnspool = Pool_Scheduler(10,DNS_Solver)
-	portscanpool = Pool_Scheduler(4,Port_Scanner,dnspool,db)
+	dnspool = Pool_Scheduler(1,DNS_Solver)
+	portscanpool = Pool_Scheduler(3,Port_Scanner,dnspool,db)
 
 	iplist = list(ip_crawler.iterateIPRange(ipfrom,ipto))
 	compoud_list = [ (x, ports) for x in iplist ]

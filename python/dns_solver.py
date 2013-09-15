@@ -5,6 +5,7 @@
 import socket
 import select
 import time
+import re
 from threading import Thread
 from threading import Semaphore
 
@@ -68,8 +69,17 @@ class DNS_Solver(Thread):
 			self._dnslist.append(DNS_Solver.dns_item(dns))
 		self._queuelock.release()
 		self._waitsem.release()
+		
+	def isip(self,ip):
+		if re.search("[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+",ip):
+			return True
+		return False
 
 	def queryDNS(self,host):
+		# Check if the host is an IP and return it!
+		if self.isip(host):
+			return host
+		
 		self._queuelock.acquire()
 		ret = None
 		for dns in self._dnslist:
