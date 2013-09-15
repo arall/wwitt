@@ -84,7 +84,7 @@ elif option == "virtualhosts":
 	httppool = Pool_Scheduler(3,Async_HTTP,dnspool,db,ip_crawler.parseVHosts)
 
 	iplist = list(ip_crawler.iterateIPRange(ipfrom,ipto))
-	dbips = db.select("hosts","ip")
+	dbips = db.select("hosts","ip",{"status":1})
 	qip = list(set(iplist) & set(dbips))
 
 	# Create BING http requests job list

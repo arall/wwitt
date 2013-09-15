@@ -43,6 +43,9 @@ def parseVHosts(url,ourl,body,db):
 		parseBing(url,ourl,body,db)
 	else:
 		parseDT(url,ourl,body,db)
+		
+def gotVhost(db,ip):
+	db.update("hosts",{'ip':ip},{"status":"2"})
 
 # Parses Bing page to get the virtualhosts for a given IP
 def parseBing(url,ourl,body,db):
@@ -61,6 +64,7 @@ def parseBing(url,ourl,body,db):
 		hosts = [ urllib.parse.urlparse("http://"+x.decode("utf-8",'ignore')).hostname for x in matches ]
 
 		ipid = list(db.select("hosts","id",{"ip":ip}))[0]
+		gotVhost(db,ip)
 
 		for h in hosts:
 			print( "Virtualhost (BING):",h,"for ip:",ip)
@@ -85,6 +89,7 @@ def parseDT(url,ourl,body,db):
 		hosts = [ urllib.parse.urlparse("http://"+x.decode("utf-8",'ignore')).hostname for x in matches ]
 
 		ipid = list(db.select("hosts","id",{"ip":ip}))[0]
+		gotVhost(db,ip)
 
 		for h in hosts:
 			print( "Virtualhost (DT):",h,"for ip:",ip)

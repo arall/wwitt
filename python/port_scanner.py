@@ -179,17 +179,28 @@ class Port_Scanner(Thread):
 	def updateDB(self):
 		da = str(datetime.datetime.now())
 		for target in self._scanlist:
-			if not target._db and target._ip != "":
-				ipi = {"ip": target._ip, "dateAdd":da, "dateUpdate":da}
+			# All ports scanned
+			alldone = True
+			allclosed = True
+			for porttuple in target._ports:
+				if porttuple[2] == "":
+					alldone = False
+				if porttuple[2] in ["open","read"]:
+					allclosed = False
+					
+			# When all ports for a given IP are done, insert results
+			if not target._db and target._ip != "" and alldone:
+				st = "0" if allclosed else "1"
+				ipi = {"ip": target._ip, "dateAdd":da, "dateUpdate":da, "status": st}
 				target._ipid = self._db.insert("hosts",ipi)
 				target._db = True
-			for porttuple in target._ports:
-				if not porttuple[5] and porttuple[2] in ["open","read"] and porttuple[1] is None:
-					porti = {"port": porttuple[0],"ipId": target._ipid, "dateAdd":da}
-					if porttuple[2] == "read":
-						porti["head"] = porttuple[6]
-					self._db.insert("services",porti)
-					porttuple[5] = True
+				for porttuple in target._ports:
+					if not porttuple[5] and porttuple[2] in ["open","read"] and porttuple[1] is None:
+						porti = {"port": porttuple[0],"ipId": target._ipid, "dateAdd":da}
+						if porttuple[2] == "read":
+							porti["head"] = porttuple[6]
+						self._db.insert("services",porti)
+						porttuple[5] = True
 		# Remove done stuff
 		for target in self._scanlist:
 			for porttuple in list(target._ports):
