@@ -20,7 +20,7 @@ class DBInterface():
 		self._lock = Semaphore(1)
 		
 	def insert(self,table,dic):
-		values = [ str(x) for x in dic.values() ]
+		values = [ x for x in dic.values() ]
 		query = "INSERT INTO "+table+" (" + (",".join(dic.keys())) + ") VALUES (" + (",".join(['%s']*len(values))) + ")"
 
 		self._lock.acquire()
