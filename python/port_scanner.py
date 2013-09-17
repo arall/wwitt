@@ -21,7 +21,7 @@ class Port_Scanner(Thread):
 			self._dns_solver = dns
 			for p in ports:
 				# Port, Socket, Status, Retries, DB
-				self._ports.append([p,None,"",0,0,False,""])
+				self._ports.append([p,None,"",0,0,False,b""])
 
 	# Required Worker method
 	def numPendingJobs(self):
@@ -103,7 +103,7 @@ class Port_Scanner(Thread):
 								porttuple[2] = "read"
 								endc = True
 							else:
-								porttuple[6] += read
+								porttuple[6] = porttuple[6] + read
 						except:
 							if err != errno.EAGAIN and err != errno.EINPROGRESS:
 								endc = True

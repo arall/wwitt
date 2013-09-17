@@ -53,9 +53,9 @@ if option == "portscan":
 	iplist = list(ip_crawler.iterateIPRange(ipfrom,ipto))
 	compoud_list = [ (x, ports) for x in iplist ]
 	
-	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K)
-	max_jobs = 3500
-	batch_size = 50
+	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K) We need 100k soft and 200k hard of limit :)
+	max_jobs = 85000
+	batch_size = 1000
 	print( "Starting ..." )
 	try:
 		while len(compoud_list) != 0:
