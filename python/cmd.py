@@ -54,7 +54,7 @@ if option == "portscan":
 	compoud_list = [ (x, ports) for x in iplist ]
 	
 	# Perfom port scan, limit outstanding jobs (Linux usually limits # of open files to 1K) We need 100k soft and 200k hard of limit :)
-	max_jobs = 85000
+	max_jobs = 60000
 	batch_size = 1000
 	print( "Starting ..." )
 	try:
@@ -124,7 +124,7 @@ elif option == "httpcrawl":
 	if len(sys.argv) >= 4:
 		if sys.argv[3] == "1": rescan = True
 	db = DBInterface()
-	dnspool = Pool_Scheduler(10,DNS_Solver)
+	dnspool = Pool_Scheduler(20,DNS_Solver)
 	httppool = Pool_Scheduler(2,Async_HTTP,dnspool,db,ip_crawler.index_query)
 
 	vhosts = list(set(list(db.select("virtualhosts","host",{"head":"$NULL$"}))))

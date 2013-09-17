@@ -122,7 +122,7 @@ class Async_HTTP(Thread):
 					if web._ip == "":
 						if web._ip_solver is None:
 							web._ip_solver = self._dns_solver.getWorkerInstance()
-							web._time = time.time()
+							web._time = time.time()+20 # Add extra timeout for DNS solving
 
 						ip = web._ip_solver.queryDNS(urllib.parse.urlparse(web._url).hostname)
 						if ip is not None:
