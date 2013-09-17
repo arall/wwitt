@@ -224,7 +224,7 @@ class Async_HTTP(Thread):
 							else:
 								web._status = 99 # Stop retrying
 				
-				if time.time()-web._time > 10 and web._socket is not None:
+				if time.time()-web._time > 10:
 					web._status = 99
 				if web._status > 50 and web._socket is not None:
 					web._socket.close()
