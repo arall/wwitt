@@ -116,7 +116,7 @@ class Port_Scanner(Thread):
 							porttuple[2] = "read"
 						continue
 						
-					if porttuple[2] != "":
+					if porttuple[2] in ["read", "closed"]:
 						if porttuple[1] is not None:
 							porttuple[1].close()
 							porttuple[1] = None
@@ -183,7 +183,7 @@ class Port_Scanner(Thread):
 			alldone = True
 			allclosed = True
 			for porttuple in target._ports:
-				if porttuple[2] == "":
+				if porttuple[1] is not None or porttuple[2] == "":
 					alldone = False
 				if porttuple[2] in ["open","read"]:
 					allclosed = False
@@ -202,12 +202,8 @@ class Port_Scanner(Thread):
 						self._db.insert("services",porti)
 						porttuple[5] = True
 		# Remove done stuff
-		for target in self._scanlist:
-			for porttuple in list(target._ports):
-				if porttuple[5]:
-					target._ports.remove(porttuple)
 		for target in list(self._scanlist):
-			if len(target._ports) == 0:
+			if target._db:
 				self._scanlist.remove(target)
 		
 
