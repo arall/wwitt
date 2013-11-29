@@ -2,8 +2,8 @@
 import mysql.connector
 from threading import Semaphore
 
-dbuser = "wwitt"
-dbpass = "112233w"
+dbuser = "root"
+dbpass = ""
 dbhost = "127.0.0.1"
 dbname = "wwitt"
  
