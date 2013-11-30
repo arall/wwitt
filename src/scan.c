@@ -21,20 +21,6 @@
 #define default_low  1
 #define default_high 1024
 
-/* Ethernet addresses are 6 bytes */
-#ifndef ETHER_ADDR_LEN
-#define ETHER_ADDR_LEN 6
-#endif
-
-/* USING TCPDUMP-like header structs */
-
-/* Ethernet header */
-struct sniff_ethernet {
-        u_char  ether_dhost[ETHER_ADDR_LEN];    /* destination host address */
-        u_char  ether_shost[ETHER_ADDR_LEN];    /* source host address */
-        u_short ether_type;                     /* IP? ARP? RARP? etc */
-};
-
 /* IP header */
 struct sniff_ip {
         u_char  ip_vhl;                 /* version << 4 | header length >> 2 */
@@ -127,6 +113,11 @@ int total_ips, total_ports;
 int portlist[32];
 volatile int adder_finish = 0;
 
+void sigterm(int s) {
+	printf("Stopping due to SIGINT/SIGTERM... This will take some seconds, be patient :)\n");
+	adder_finish = 1;
+}
+
 int main(int argc, char **argv) {
 	char errbuf[1024];
 	
@@ -191,6 +182,9 @@ int main(int argc, char **argv) {
 	pthread_t scanner, db;
 	pthread_create (&scanner, NULL, &query_adder, NULL);
 	pthread_create (&db, NULL, &database_dispatcher, NULL);
+	
+	signal(SIGTERM, &sigterm);
+	signal(SIGINT, &sigterm);
 	
 	pcap_loop(handle , -1 , process_packet , NULL);
 }
@@ -264,7 +258,7 @@ void * query_adder(void * args) {
 	int i,j;
 	unsigned long long injected_packets = 0;
 	unsigned int init_time = time(0);
-	for (i = 0; i < total_ips; i++) {
+	for (i = 0; i < total_ips && adder_finish == 0; i++) {
 		struct in_addr ip_dst = nextip();
 		char packet[32][128];
 		memset(packet, 0, sizeof(packet));
@@ -416,7 +410,7 @@ void * database_dispatcher(void * args) {
 	char sql_query[2][64*1024];
 	sql_prepare(sql_query[0],sql_query[1]);
 
-	while (!adder_finish || num_t_ent > 0) {
+	do {
 		unsigned int ptr = MAX_OUTSTANDING_QUERIES;
 		do {
 			ptr--;
@@ -452,7 +446,9 @@ void * database_dispatcher(void * args) {
 
 		sleep(1);
 		printf("Outstanding scans: %d\n",num_t_ent);
-	}
+	} while (!adder_finish || num_t_ent > 0);
+	
+	flush_db(sql_query[0],sql_query[1]);
 	
 	printf("End of scan, quitting!\n");
 	printf("Open %llu Filtered %llu\n", num_ports_open, num_ports_filtered);
