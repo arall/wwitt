@@ -77,12 +77,22 @@ void * worker_thread(void * args) {
 void bing_parser(void * buffer, int size) {
 	
 }
+// Parse DT result page
+void dt_parser(void * buffer, int size) {
+	
+}
 
 void create_bing_url(char * url, unsigned int ip, int pagen) {
 	struct in_addr in;
 	in.s_addr = ip;
 	char * ipaddr = inet_ntoa(in);
-	sprintf(url, "http://www.bing.com/search?first=%d&q=IP:%20%s", pagen, ipaddr);
+	sprintf(url, "http://www.bing.com/search?first=%d&q=IP:+%s", pagen, ipaddr);
+}
+void create_dt_url(char * url, unsigned int ip) {
+	struct in_addr in;
+	in.s_addr = ip;
+	char * ipaddr = inet_ntoa(in);
+	sprintf(url, "http://reverseip.domaintools.com/search/?q=%s", ipaddr);
 }
 
 void mysql_initialize() {
@@ -116,7 +126,7 @@ int main(char ** argv, int argc) {
 "     '\\/__//__/  '\\/__//__/  \\/_____/  \\/_/    \\/_/ \n"
 "                                                    \n"
 "         World Wide Internet Takeover Tool          \n"
-"                Web/Banner crawler                  \n"  );
+"                Reverse IP crawler                  \n"  );
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 	mysql_initialize();
@@ -143,6 +153,11 @@ int main(char ** argv, int argc) {
 			
 			pqueue_push(&job_queue, njob);
 		}
+		struct job_object * njob = malloc(sizeof(struct job_object));
+		create_dt_url(njob->url,ip);
+		njob->callback = dt_parser;
+		pqueue_push(&job_queue, njob);
+
 
 		while (pqueue_size(&job_queue) > NUM_WORKERS*10)
 			sleep(1);
