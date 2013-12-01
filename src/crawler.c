@@ -291,6 +291,10 @@ void * database_dispatcher(void * args) {
 				}
 				num_processed++;
 				mysql_query(mysql_conn_update,sql_query);
+				
+				if (cquery->inbuffer) free(cquery->inbuffer);
+				if (cquery->outbuffer) free(cquery->outbuffer);
+				if (cquery->usrdata) free(cquery->usrdata);
 				cquery->status = 0; // Mark as unused
 			}
 		}
