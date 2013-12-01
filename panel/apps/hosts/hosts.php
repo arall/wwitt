@@ -25,8 +25,6 @@ class hostsController extends Controller {
 		if($host->ip){
 			$services = $host->getServices();
 			$virtualHosts = $host->getVirtualHosts();
-			$vulns = Vuln::selectVulns();
-			$this->setData("vulns", $vulns);
 			$this->setData("virtualHosts", $virtualHosts);
 			$this->setData("services", $services);
 			$this->setData("host", $host);
@@ -42,13 +40,16 @@ class hostsController extends Controller {
 		if($host->ip){
 			$vuln = new Vuln($_REQUEST['vulnId']);
 			if($vuln->id){
+				$virtualHost = null;
 				$port = $_REQUEST['port'];
 				if($_REQUEST['virtualHostId']){
 					$virtualHost = new virtualHost($_REQUEST['virtualHostId']);
 				}
 				$res = $vuln->exploit($host, $port, $virtualHost);
 				if($res){
-					Registry::addMessage("Exploit finished", "success");
+					Registry::addMessage("Vuln exploited successfully", "success");
+				}else{
+					Registry::addMessage("Exploited failed", "danger");
 				}
 			}else{
 				Registry::addMessage("Invalid Vuln", "danger");

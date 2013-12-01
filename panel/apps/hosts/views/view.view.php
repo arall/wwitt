@@ -71,6 +71,8 @@
 				<td><?=$service->info?></td>
 				<td><?=$service->dateAdd?></td>
 				<td>
+					<?php $vulns = Vuln::selectVulns($service->port); ?>
+					<?php if(count($vulns)){ ?>
 					<div class="btn-group">
 						<button type="button" class="btn btn-danger">Exploit</button>
 						<button type="button" class="btn btn-danger dropdown-toggle" data-toggle="dropdown">
@@ -87,6 +89,7 @@
 							<?php } ?>
 						</ul>
 					</div>
+					<?php } ?>
 				</td>
 			</tr>
 		<?php } ?>

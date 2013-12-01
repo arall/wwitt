@@ -20,14 +20,22 @@ function __autoload($class_name) {
 }
 
 //Libs
+//Telnet
+include('libs'.DIRECTORY_SEPARATOR."telnet.class.php");
+//SSH
 set_include_path("libs".DIRECTORY_SEPARATOR.'phpseclib');
 include('Net/SSH2.php');
+//Colorize CLI
+include("libs".DIRECTORY_SEPARATOR."colorize.php");
 
 //Registry
 $registry = new Registry();
 
-//Router
-$router = new Router();
-$router->delegate();
+//Non-command  line mode?
+if(php_sapi_name()!="cli"){
+    //Router
+    $router = new Router();
+    $router->delegate();
+}
 
 ?>
