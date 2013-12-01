@@ -4,6 +4,7 @@ class Vuln extends Model {
 	var $id;
 	var $name;
 	var $type;
+	var $port;
 	var $exploitModule;
 	var $dateAdd;
 
@@ -18,9 +19,12 @@ class Vuln extends Model {
 		if(file_exists("classes/exploitModules/".$this->exploitModule.".php")){
 			include("classes/exploitModules/".$this->exploitModule.".php");
 			$module = new $this->exploitModule($this, $host, $port, $virtualHost);
-			if($module->preRun){
+			if($module->preRun()){
+				echoCli("Executing ".$this->exploitModule." exploit against ".$host->ipAdress.":".$port, "title");
 				$res = $module->run();
-				$module->save();
+				if(!CLI_DEBUG){
+					$module->save();
+				}
 				return $res;
 			}
 		}else{
@@ -29,9 +33,12 @@ class Vuln extends Model {
 		return false;
 	}
 
-	public function selectVulns(){
+	public function selectVulns($port=0){
 		$db = Registry::getDb();
-		$query = "SELECT * FROM vulns";
+		$query = "SELECT * FROM vulns WHERE 1=1 ";
+		if($port){
+			$query .= "AND port=".(int)$port;
+		}
 		if($db->Query($query)){
 			if($db->getNumRows()){
 				$rows = $db->loadArrayList();
