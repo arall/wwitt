@@ -1,4 +1,6 @@
 
+#define _GNU_SOURCE 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,11 +8,12 @@
 #include <pthread.h>
 #include <mysql.h>
 #include <arpa/inet.h>
+#include <regex.h>
 #include "pqueue.h"
 
 // Maximum query size, 1MB
 #define MAX_BUFFER_SIZE   (1024*1024)
-#define NUM_WORKERS       16
+#define NUM_WORKERS       4
 
 MYSQL *mysql_conn_select;
 MYSQL *mysql_conn_update;
@@ -29,8 +32,8 @@ struct job_object {
 static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream) {
 	struct http_query * q = (struct http_query *)stream;
 
-	if (q->buffer == NULL) q->buffer = malloc(size*nmemb);
-	else q->buffer = realloc(q->buffer, size*nmemb + q->received);
+	if (q->buffer == NULL) q->buffer = malloc(size*nmemb + 32);
+	else q->buffer = realloc(q->buffer, size*nmemb + q->received + 32);
 
 	memcpy(&q->buffer[q->received], buffer, size*nmemb);
 	q->received += size*nmemb;
@@ -73,12 +76,51 @@ void * worker_thread(void * args) {
 	printf("Ending thread\n");
 }
 
+struct re_pattern_buffer reg1, reg2;
+void compile_regexp() {
+	reg1.translate = 0;
+	reg1.fastmap = 0;
+	reg1.buffer = 0;
+	reg1.allocated = 0;
+	re_set_syntax(RE_SYNTAX_POSIX_EXTENDED);
+	const char * pat1 = "<div[^<>]*class=\"sb_meta\"[^>]*>[^<>]*<cite>([^<]*)</cite>";
+	re_compile_pattern(pat1, strlen(pat1), &reg1); 
+
+	reg2.translate = 0;
+	reg2.fastmap = 0;
+	reg2.buffer = 0;
+	reg2.allocated = 0;
+	re_set_syntax(RE_SYNTAX_POSIX_EXTENDED);
+	const char * pat2 = "IP:([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+)";
+	re_compile_pattern(pat2, strlen(pat2), &reg2); 
+}
+
 // Parse BING result page
 void bing_parser(void * buffer, int size) {
-	
+	char * cbuffer = (char*)buffer;
+	cbuffer[size] = 0; // We have some space after the buffer
+
+	char ipaddr[1024]; memset(ipaddr,0,sizeof(ipaddr));
+	struct re_registers regs;
+	if (re_search(&reg2,cbuffer,size,0,size,&regs)!=-1) {
+		if (regs.start[1] >= 0) {
+			memcpy(ipaddr,&cbuffer[regs.start[1]],regs.end[1]-regs.start[1]);
+		}
+	}
+
+	int off = 0;
+	while (re_search(&reg1,cbuffer,size,off,size,&regs) != -1) {
+		if (regs.start[1] >= 0) {
+			char temp[4096]; memset(temp,0,sizeof(temp));
+			memcpy(temp,&cbuffer[regs.start[1]],regs.end[1]-regs.start[1]);
+			printf("Match found %s %s\n",temp,ipaddr);
+			off = regs.end[1];
+		}
+		else break;
+	}
 }
 // Parse DT result page
-void dt_parser(void * buffer, int size) {
+void dt_parser(void * buffer, int sizei) {
 	
 }
 
@@ -86,7 +128,7 @@ void create_bing_url(char * url, unsigned int ip, int pagen) {
 	struct in_addr in;
 	in.s_addr = ip;
 	char * ipaddr = inet_ntoa(in);
-	sprintf(url, "http://www.bing.com/search?first=%d&q=IP:+%s", pagen, ipaddr);
+	sprintf(url, "http://www.bing.com/search?first=%d&q=IP:%s", pagen, ipaddr);
 }
 void create_dt_url(char * url, unsigned int ip) {
 	struct in_addr in;
@@ -104,8 +146,8 @@ void mysql_initialize() {
 	mysql_conn_update = mysql_init(NULL);
 	/* Connect to database */
 	printf("Connecting to mysqldb...\n");
-	if (!mysql_real_connect(mysql_conn_select, server, user, password, database, 0, NULL, 0) || 
-		!mysql_real_connect(mysql_conn_update, server, user, password, database, 0, NULL, 0) ) {
+	if (mysql_real_connect(mysql_conn_select, server, user, password, database, 0, NULL, 0) == 0|| 
+		mysql_real_connect(mysql_conn_update, server, user, password, database, 0, NULL, 0) == 0 ) {
 		fprintf(stderr, "%s\n", mysql_error(mysql_conn_select));
 		fprintf(stderr, "%s\n", mysql_error(mysql_conn_update));
 		fprintf(stderr, "User %s Pass %s Host %s Database %s\n", user, password, server, database);
@@ -130,6 +172,7 @@ int main(char ** argv, int argc) {
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 	mysql_initialize();
+	compile_regexp();
 	
 	// Create some CURL workers
 	struct pqueue job_queue;
@@ -140,11 +183,11 @@ int main(char ** argv, int argc) {
 		pthread_create (&curl_workers[i], NULL, &worker_thread, &job_queue);
 
 	// Now query IPs and enqueue jobs
-	mysql_query(mysql_conn_select, "SELECT ip FROM ...");
+	mysql_query(mysql_conn_select, "SELECT `ip` FROM hosts WHERE reverseIpStatus=0");
 	MYSQL_RES *result = mysql_store_result(mysql_conn_select);
 	MYSQL_ROW row;
 	while (result && (row = mysql_fetch_row(result))) {
-		unsigned int ip = atoi(row[0]);
+		unsigned int ip = ntohl(atoi(row[0]));
 		
 		for (i = 0; i < 5; i++) {
 			struct job_object * njob = malloc(sizeof(struct job_object));
@@ -158,9 +201,10 @@ int main(char ** argv, int argc) {
 		njob->callback = dt_parser;
 		pqueue_push(&job_queue, njob);
 
-
-		while (pqueue_size(&job_queue) > NUM_WORKERS*10)
+		while (pqueue_size(&job_queue) > NUM_WORKERS*3)
 			sleep(1);
+
+		printf("%d jobs in the queue\n", pqueue_size(&job_queue));
 	}
 	
 	// Now stop all the threads

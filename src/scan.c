@@ -471,7 +471,7 @@ void * database_dispatcher(void * args) {
 
 void sql_prepare(char *q1, char *q2) {
 	strcpy(q1, "INSERT IGNORE INTO `hosts` (`ip`,`dateAdd`) VALUES ");
-	strcpy(q2, "INSERT IGNORE INTO `services` (`ip`, `port`, `status`) VALUES ");
+	strcpy(q2, "INSERT IGNORE INTO `services` (`ip`, `port`, `filtered`,`dateAdd`) VALUES ");
 }
 
 void insert_register(struct in_addr ip, unsigned int port, unsigned int status, char *q1, char *q2) {
@@ -481,7 +481,7 @@ void insert_register(struct in_addr ip, unsigned int port, unsigned int status, 
 	char temp[4096];
 	sprintf(temp,"%s('%d',now())", comma, ntohl(ip.s_addr));
 	strcat(q1,temp);
-	sprintf(temp,"%s('%d', '%d', '%d')", comma, ntohl(ip.s_addr), port, 3-status);
+	sprintf(temp,"%s('%d', '%d', '%d', now())", comma, ntohl(ip.s_addr), port, status-2);
 	strcat(q2,temp);
 }
 
