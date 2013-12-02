@@ -13,12 +13,12 @@
 -- Dumping structure for table wwitt.hosts
 DROP TABLE IF EXISTS `hosts`;
 CREATE TABLE IF NOT EXISTS `hosts` (
-  `ip` int(11) NOT NULL,
-  `status` int(11) DEFAULT NULL,
+  `ip` int(10) unsigned NOT NULL,
+  `reverseIpStatus` int(1) DEFAULT NULL,
   `hostname` varchar(50) DEFAULT NULL,
   `os` varchar(50) DEFAULT NULL,
-  `dateAdd` datetime DEFAULT NULL,
-  `dateUpdate` datetime DEFAULT NULL,
+  `dateAdd` timestamp NULL DEFAULT NULL,
+  `dateUpdate` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`ip`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -28,19 +28,19 @@ CREATE TABLE IF NOT EXISTS `hosts` (
 -- Dumping structure for table wwitt.services
 DROP TABLE IF EXISTS `services`;
 CREATE TABLE IF NOT EXISTS `services` (
-  `id` int(10) NOT NULL AUTO_INCREMENT,
-  `ip` int(10) DEFAULT NULL,
-  `port` int(10) DEFAULT NULL,
-  `status` int(10) DEFAULT NULL,
+  `ip` int(10) unsigned NOT NULL,
+  `port` int(10) NOT NULL,
+  `filtered` int(1) DEFAULT NULL,
   `head` text,
   `name` varchar(50) DEFAULT NULL,
   `protocol` varchar(50) DEFAULT NULL,
   `product` varchar(50) DEFAULT NULL,
   `version` varchar(50) DEFAULT NULL,
   `info` varchar(50) DEFAULT NULL,
-  `dateAdd` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `ipId_port` (`ip`,`port`)
+  `dateAdd` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`ip`,`port`),
+  UNIQUE KEY `ipId_port` (`ip`,`port`),
+  CONSTRAINT `services_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- Data exporting was unselected.
@@ -64,12 +64,12 @@ DROP VIEW IF EXISTS `viewHosts`;
 -- Creating temporary table to overcome VIEW dependency errors
 CREATE TABLE `viewHosts` (
 	`ipAdress` VARCHAR(31) NULL COLLATE 'utf8_general_ci',
-	`ip` INT(11) NOT NULL,
-	`status` INT(11) NULL,
+	`ip` INT(10) UNSIGNED NOT NULL,
+	`reverseIpStatus` INT(1) NULL,
 	`hostname` VARCHAR(50) NULL COLLATE 'latin1_swedish_ci',
 	`os` VARCHAR(50) NULL COLLATE 'latin1_swedish_ci',
-	`dateAdd` DATETIME NULL,
-	`dateUpdate` DATETIME NULL,
+	`dateAdd` TIMESTAMP NULL,
+	`dateUpdate` TIMESTAMP NULL,
 	`totalServices` BIGINT(21) NULL,
 	`totalVirtualhosts` BIGINT(21) NULL
 ) ENGINE=MyISAM;
@@ -78,16 +78,16 @@ CREATE TABLE `viewHosts` (
 -- Dumping structure for table wwitt.virtualhosts
 DROP TABLE IF EXISTS `virtualhosts`;
 CREATE TABLE IF NOT EXISTS `virtualhosts` (
-  `id` int(10) NOT NULL AUTO_INCREMENT,
-  `ip` int(10) DEFAULT '0',
-  `host` varchar(50) DEFAULT NULL,
+  `ip` int(10) unsigned NOT NULL,
+  `host` varchar(50) NOT NULL,
   `url` varchar(512) DEFAULT NULL,
   `head` text,
   `index` mediumtext,
   `robots` mediumtext,
-  `dateAdd` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `ipId_host` (`ip`,`host`)
+  `dateAdd` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`ip`,`host`),
+  UNIQUE KEY `ipId_host` (`ip`,`host`),
+  CONSTRAINT `virtualHosts_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- Data exporting was unselected.
@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS `vulns` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
   `name` varchar(250) DEFAULT NULL,
   `type` int(11) NOT NULL DEFAULT '0',
+  `port` int(11) NOT NULL DEFAULT '0',
   `exploitModule` varchar(250) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
@@ -110,7 +111,7 @@ CREATE TABLE IF NOT EXISTS `vulns` (
 DROP TABLE IF EXISTS `vulns_hosts`;
 CREATE TABLE IF NOT EXISTS `vulns_hosts` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
-  `ip` int(10) NOT NULL DEFAULT '0',
+  `ip` int(10) unsigned NOT NULL DEFAULT '0',
   `vulnId` int(10) NOT NULL DEFAULT '0',
   `port` int(10) NOT NULL DEFAULT '0',
   `virtualhostId` int(10) NOT NULL DEFAULT '0',
@@ -123,4 +124,12 @@ CREATE TABLE IF NOT EXISTS `vulns_hosts` (
 
 -- Data exporting was unselected.
 
-INSERT INTO `users` (`username`, `password`) VALUES ('admin', '0c7540eb7e65b553ec1ba6b20de79608');
+
+-- Dumping structure for view wwitt.viewHosts
+DROP VIEW IF EXISTS `viewHosts`;
+-- Removing temporary table and create final VIEW structure
+DROP TABLE IF EXISTS `viewHosts`;
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `viewHosts` AS select inet_ntoa(`hosts`.`ip`) AS `ipAdress`,`hosts`.`ip` AS `ip`,`hosts`.`reverseIpStatus` AS `reverseIpStatus`,`hosts`.`hostname` AS `hostname`,`hosts`.`os` AS `os`,`hosts`.`dateAdd` AS `dateAdd`,`hosts`.`dateUpdate` AS `dateUpdate`,(select count(`services`.`ip`) from `services` where (`services`.`ip` = `hosts`.`ip`)) AS `totalServices`,(select count(`virtualhosts`.`ip`) from `virtualhosts` where (`virtualhosts`.`ip` = `hosts`.`ip`)) AS `totalVirtualhosts` from `hosts`;
+/*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
+/*!40014 SET FOREIGN_KEY_CHECKS=IF(@OLD_FOREIGN_KEY_CHECKS IS NULL, 1, @OLD_FOREIGN_KEY_CHECKS) */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

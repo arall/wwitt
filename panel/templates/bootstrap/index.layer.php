@@ -34,7 +34,7 @@
 						<a href="<?=Url::site("login")?>">Login</a>
 					</li>
 					<?php }else{ ?>
-					<li class="">
+					zz<li class="">
 						<a href="<?=Url::site("hosts")?>">Hosts</a>
 					</li>
 					<li class="">
