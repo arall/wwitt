@@ -9,7 +9,7 @@ define("CLI_DEBUG", true); //Dont save the results
 include("index.php");
 
 //Define
-$vulnId = 2;
+$vulnId = 3;
 
 //Creating Models
 $host = new Host();

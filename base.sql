@@ -22,14 +22,16 @@ CREATE TABLE IF NOT EXISTS `hosts` (
   PRIMARY KEY (`ip`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
--- Data exporting was unselected.
+-- Dumping data for table wwitt.hosts: ~2 rows (approximately)
+/*!40000 ALTER TABLE `hosts` DISABLE KEYS */;
+/*!40000 ALTER TABLE `hosts` ENABLE KEYS */;
 
 
 -- Dumping structure for table wwitt.services
 DROP TABLE IF EXISTS `services`;
 CREATE TABLE IF NOT EXISTS `services` (
   `ip` int(10) unsigned NOT NULL,
-  `port` int(10) NOT NULL,
+  `port` smallint(5) unsigned NOT NULL,
   `filtered` int(1) DEFAULT NULL,
   `head` text,
   `name` varchar(50) DEFAULT NULL,
@@ -43,7 +45,9 @@ CREATE TABLE IF NOT EXISTS `services` (
   CONSTRAINT `services_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
--- Data exporting was unselected.
+-- Dumping data for table wwitt.services: ~0 rows (approximately)
+/*!40000 ALTER TABLE `services` DISABLE KEYS */;
+/*!40000 ALTER TABLE `services` ENABLE KEYS */;
 
 
 -- Dumping structure for table wwitt.users
@@ -54,9 +58,13 @@ CREATE TABLE IF NOT EXISTS `users` (
   `password` varchar(512) NOT NULL DEFAULT '0',
   `lastvisitDate` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=latin1;
 
--- Data exporting was unselected.
+-- Dumping data for table wwitt.users: ~1 rows (approximately)
+/*!40000 ALTER TABLE `users` DISABLE KEYS */;
+INSERT INTO `users` (`id`, `username`, `password`, `lastvisitDate`) VALUES
+	(1, 'admin', '0c7540eb7e65b553ec1ba6b20de79608', '2013-12-01 18:21:24');
+/*!40000 ALTER TABLE `users` ENABLE KEYS */;
 
 
 -- Dumping structure for view wwitt.viewHosts
@@ -90,7 +98,9 @@ CREATE TABLE IF NOT EXISTS `virtualhosts` (
   CONSTRAINT `virtualHosts_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
--- Data exporting was unselected.
+-- Dumping data for table wwitt.virtualhosts: ~0 rows (approximately)
+/*!40000 ALTER TABLE `virtualhosts` DISABLE KEYS */;
+/*!40000 ALTER TABLE `virtualhosts` ENABLE KEYS */;
 
 
 -- Dumping structure for table wwitt.vulns
@@ -102,9 +112,15 @@ CREATE TABLE IF NOT EXISTS `vulns` (
   `port` int(11) NOT NULL DEFAULT '0',
   `exploitModule` varchar(250) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=latin1;
 
--- Data exporting was unselected.
+-- Dumping data for table wwitt.vulns: ~3 rows (approximately)
+/*!40000 ALTER TABLE `vulns` DISABLE KEYS */;
+INSERT INTO `vulns` (`id`, `name`, `type`, `port`, `exploitModule`) VALUES
+	(1, 'SSH Weak Login', 1, 22, 'sshWeakLogin'),
+	(2, 'Telnet Weak Login', 1, 23, 'telnetWeakLogin'),
+	(3, 'HTTP Weak Login', 1, 80, 'httpWeakLogin');
+/*!40000 ALTER TABLE `vulns` ENABLE KEYS */;
 
 
 -- Dumping structure for table wwitt.vulns_hosts
@@ -124,7 +140,9 @@ CREATE TABLE IF NOT EXISTS `vulns_hosts` (
   CONSTRAINT `vuln_hosts_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
--- Data exporting was unselected.
+-- Dumping data for table wwitt.vulns_hosts: ~0 rows (approximately)
+/*!40000 ALTER TABLE `vulns_hosts` DISABLE KEYS */;
+/*!40000 ALTER TABLE `vulns_hosts` ENABLE KEYS */;
 
 
 -- Dumping structure for view wwitt.viewHosts
