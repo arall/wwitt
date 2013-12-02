@@ -14,11 +14,11 @@
 DROP TABLE IF EXISTS `hosts`;
 CREATE TABLE IF NOT EXISTS `hosts` (
   `ip` int(10) unsigned NOT NULL,
-  `reverseIpStatus` int(1) DEFAULT NULL,
+  `reverseIpStatus` int(1) NOT NULL DEFAULT '0',
   `hostname` varchar(50) DEFAULT NULL,
   `os` varchar(50) DEFAULT NULL,
-  `dateAdd` timestamp NULL DEFAULT NULL,
-  `dateUpdate` timestamp NULL DEFAULT NULL,
+  `dateAdd` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `dateUpdate` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
   PRIMARY KEY (`ip`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS `services` (
   `product` varchar(50) DEFAULT NULL,
   `version` varchar(50) DEFAULT NULL,
   `info` varchar(50) DEFAULT NULL,
-  `dateAdd` timestamp NULL DEFAULT NULL,
+  `dateAdd` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`ip`,`port`),
   UNIQUE KEY `ipId_port` (`ip`,`port`),
   CONSTRAINT `services_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `username` varchar(16) NOT NULL,
   `password` varchar(512) NOT NULL DEFAULT '0',
-  `lastvisitDate` datetime NOT NULL,
+  `lastvisitDate` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -65,11 +65,11 @@ DROP VIEW IF EXISTS `viewHosts`;
 CREATE TABLE `viewHosts` (
 	`ipAdress` VARCHAR(31) NULL COLLATE 'utf8_general_ci',
 	`ip` INT(10) UNSIGNED NOT NULL,
-	`reverseIpStatus` INT(1) NULL,
+	`reverseIpStatus` INT(1) NOT NULL,
 	`hostname` VARCHAR(50) NULL COLLATE 'latin1_swedish_ci',
 	`os` VARCHAR(50) NULL COLLATE 'latin1_swedish_ci',
 	`dateAdd` TIMESTAMP NULL,
-	`dateUpdate` TIMESTAMP NULL,
+	`dateUpdate` TIMESTAMP NOT NULL,
 	`totalServices` BIGINT(21) NULL,
 	`totalVirtualhosts` BIGINT(21) NULL
 ) ENGINE=MyISAM;
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS `virtualhosts` (
   `head` text,
   `index` mediumtext,
   `robots` mediumtext,
-  `dateAdd` timestamp NULL DEFAULT NULL,
+  `dateAdd` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`ip`,`host`),
   UNIQUE KEY `ipId_host` (`ip`,`host`),
   CONSTRAINT `virtualHosts_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS `vulns` (
   `name` varchar(250) DEFAULT NULL,
   `type` int(11) NOT NULL DEFAULT '0',
   `port` int(11) NOT NULL DEFAULT '0',
-  `exploitModule` varchar(250) NOT NULL DEFAULT '0',
+  `exploitModule` varchar(250) DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -115,11 +115,13 @@ CREATE TABLE IF NOT EXISTS `vulns_hosts` (
   `vulnId` int(10) NOT NULL DEFAULT '0',
   `port` int(10) NOT NULL DEFAULT '0',
   `virtualhostId` int(10) NOT NULL DEFAULT '0',
-  `status` int(10) NOT NULL DEFAULT '0',
+  `status` int(1) NOT NULL DEFAULT '0',
   `data` text,
-  `dateAdd` datetime DEFAULT NULL,
-  `dateUpdate` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  `dateAdd` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `dateUpdate` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `vuln_hosts_ip` (`ip`),
+  CONSTRAINT `vuln_hosts_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- Data exporting was unselected.
