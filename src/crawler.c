@@ -88,6 +88,19 @@ char * generateHTTPQuery(const char * vhost, const char * path) {
 int main(int argc, char **argv) {
 	char errbuf[1024];
 	
+	printf(
+"  __      __  __      __  ______  ______  ______    \n"
+" /\\ \\  __/\\ \\/\\ \\  __/\\ \\/\\__  _\\/\\__  _\\/\\__  _\\   \n"
+" \\ \\ \\/\\ \\ \\ \\ \\ \\/\\ \\ \\ \\/_/\\ \\/\\/_/\\ \\/\\/_/\\ \\/   \n"
+"  \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\   \\ \\ \\   \\ \\ \\   \n"
+"   \\ \\ \\_/ \\_\\ \\ \\ \\_/ \\_\\ \\ \\_\\ \\__ \\ \\ \\   \\ \\ \\  \n"
+"    \\ `\\___x___/\\ `\\___x___/ /\\_____\\ \\ \\_\\   \\ \\_\\ \n"
+"     '\\/__//__/  '\\/__//__/  \\/_____/  \\/_/    \\/_/ \n"
+"                                                    \n"
+"         World Wide Internet Takeover Tool          \n"
+"                Web/Banner crawler                  \n"  );
+
+	
 	if ( argc < 2 || (strcmp("banner",argv[1]) == 0 && argc < 5) ) {
 		fprintf(stderr, "Usage: %s http\n", argv[0]);
 		fprintf(stderr, "Usage: %s banner IPstart IPend ports{max 32}\n", argv[0]);
@@ -278,6 +291,10 @@ void * database_dispatcher(void * args) {
 				}
 				num_processed++;
 				mysql_query(mysql_conn_update,sql_query);
+				
+				if (cquery->inbuffer) free(cquery->inbuffer);
+				if (cquery->outbuffer) free(cquery->outbuffer);
+				if (cquery->usrdata) free(cquery->usrdata);
 				cquery->status = 0; // Mark as unused
 			}
 		}
