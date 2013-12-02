@@ -95,6 +95,14 @@ void compile_regexp() {
 	re_compile_pattern(pat2, strlen(pat2), &reg2); 
 }
 
+void database_insert(const char * host, const char * ipaddr) {
+	struct in_addr in;
+	inet_aton(ipaddr,&in); unsigned int ip = ntohl(in.s_addr);
+	char tquery[8*1024];
+	sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`, `dateAdd`) VALUES (%d, '%s', now())", ip, host);
+	mysql_query(mysql_conn_select, tquery);
+}
+
 // Parse BING result page
 void bing_parser(void * buffer, int size) {
 	char * cbuffer = (char*)buffer;
@@ -113,7 +121,10 @@ void bing_parser(void * buffer, int size) {
 		if (regs.start[1] >= 0) {
 			char temp[4096]; memset(temp,0,sizeof(temp));
 			memcpy(temp,&cbuffer[regs.start[1]],regs.end[1]-regs.start[1]);
-			printf("Match found %s %s\n",temp,ipaddr);
+			char * slash = strstr(temp,"/");
+			if (slash) *slash = 0;
+			database_insert(temp, ipaddr);
+			//printf("Match found %s %s\n",temp,ipaddr);
 			off = regs.end[1];
 		}
 		else break;
