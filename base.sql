@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS `hosts` (
 DROP TABLE IF EXISTS `services`;
 CREATE TABLE IF NOT EXISTS `services` (
   `ip` int(10) unsigned NOT NULL,
-  `port` int(10) NOT NULL,
+  `port` smallint(5) unsigned NOT NULL,
   `filtered` int(1) DEFAULT NULL,
   `head` text,
   `name` varchar(50) DEFAULT NULL,
