@@ -17,6 +17,7 @@
 
 MYSQL *mysql_conn_select;
 MYSQL *mysql_conn_update;
+pthread_mutex_t update_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef void (*callback_fn)(void*,int);
 
@@ -96,11 +97,23 @@ void compile_regexp() {
 }
 
 void database_insert(const char * host, const char * ipaddr) {
+	char tquery[8*1024];
 	struct in_addr in;
 	inet_aton(ipaddr,&in); unsigned int ip = ntohl(in.s_addr);
-	char tquery[8*1024];
-	sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`, `dateAdd`) VALUES (%d, '%s', now())", ip, host);
-	mysql_query(mysql_conn_select, tquery);
+
+	pthread_mutex_lock(&update_mutex);
+	if (host) {
+		sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`, `dateAdd`) VALUES (%d, '%s', now())", ip, host);
+		mysql_query(mysql_conn_update, tquery);
+	}
+	else
+	{
+		sprintf(tquery, "UPDATE `hosts` SET reverseIpStatus=1 WHERE ip=%d", ip);
+		mysql_query(mysql_conn_update, tquery);
+		sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`, `dateAdd`) VALUES (%d, '%s', now())", ip, ipaddr);
+		mysql_query(mysql_conn_update, tquery);
+	}
+	pthread_mutex_unlock(&update_mutex);
 }
 
 // Parse BING result page
@@ -113,6 +126,7 @@ void bing_parser(void * buffer, int size) {
 	if (re_search(&reg2,cbuffer,size,0,size,&regs)!=-1) {
 		if (regs.start[1] >= 0) {
 			memcpy(ipaddr,&cbuffer[regs.start[1]],regs.end[1]-regs.start[1]);
+			database_insert(0, ipaddr);
 		}
 	}
 
