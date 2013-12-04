@@ -33,8 +33,7 @@ struct job_object {
 static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream) {
 	struct http_query * q = (struct http_query *)stream;
 
-	if (q->buffer == NULL) q->buffer = malloc(size*nmemb + 32);
-	else q->buffer = realloc(q->buffer, size*nmemb + q->received + 32);
+	q->buffer = realloc(q->buffer, size*nmemb + q->received + 32);
 
 	memcpy(&q->buffer[q->received], buffer, size*nmemb);
 	q->received += size*nmemb;
@@ -52,6 +51,7 @@ void * worker_thread(void * args) {
 	while (job != NULL) {
 		struct http_query hq;
 		memset(&hq,0,sizeof(hq));
+		hq.buffer = malloc(32);
 
 		CURL * curl = curl_easy_init();
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);

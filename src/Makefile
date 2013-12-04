@@ -6,4 +6,4 @@ all:
 	gcc -o vhost vhost.c -lpthread -lcurl -O2 `mysql_config --include` `mysql_config --libs`
 
 clean:
-	rm -rf scan
+	rm -rf scan crawler vhost
