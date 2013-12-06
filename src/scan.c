@@ -133,8 +133,8 @@ int main(int argc, char **argv) {
 "         World Wide Internet Takeover Tool          \n"
 "                    Port scanner                    \n"  );
 	
-	if (argc < 5) {
-		fprintf(stderr,"Usage: %s IPstart IPend ports{max 32} device\n", argv[0]);
+	if (argc < 6) {
+		fprintf(stderr,"Usage: %s IPstart IPend ports{max 32} speed(mbps) device\n", argv[0]);
 		exit(1);
 	}
 	
@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
 			plist = strstr(plist, ",");
 			if (plist) plist++;
 		}
-		int KBps = 500;
+		int KBps = 1024/8*atoi(argv[4]);
 		maxpp = (double)(KBps)*1024 / 64;  // Aprox formula
 		
 		struct in_addr last_ip;
@@ -164,12 +164,12 @@ int main(int argc, char **argv) {
 	}
 
 	while (alldevsp != NULL) {
-		if (strcmp(argv[4], alldevsp->name) == 0)
+		if (strcmp(argv[5], alldevsp->name) == 0)
 			break;
 		alldevsp = alldevsp->next;
 	}
 	if (alldevsp == NULL) {
-		fprintf(stderr, "Could not open %d dev for pcap!\n", argv[4]);
+		fprintf(stderr, "Could not open %d dev for pcap!\n", argv[5]);
 		exit(1);
 	}
 	

@@ -50,11 +50,29 @@ static void pqueue_push(struct pqueue * queue, void * usr_data) {
 	pthread_mutex_unlock(&queue->queue_lock);
 }
 
+// Push element in the front (typically used to give hi prio)
+static void pqueue_push_front(struct pqueue * queue, void * usr_data) {
+	pthread_mutex_lock(&queue->queue_lock);
+	struct pqueue_elem * h = queue->qhead;
+	
+	struct pqueue_elem * ne = malloc(sizeof(pqueue_elem));
+	ne->data = usr_data;
+	ne->next = queue->qhead;
+
+	queue->qhead = ne;
+	
+	// Signal some other thread waiting in the queue
+	pthread_cond_signal(&queue->not_empty);
+	
+	pthread_mutex_unlock(&queue->queue_lock);
+}
+
+
 static void * pqueue_pop(struct pqueue * queue) {
 	pthread_mutex_lock(&queue->queue_lock);
 	
 	void * udata = 0;
-	while (queue->queue_end == 0) {
+	while (1) {
 		if (queue->qhead != 0) {
 			struct pqueue_elem * h = queue->qhead;
 			udata = queue->qhead->data;
@@ -63,8 +81,12 @@ static void * pqueue_pop(struct pqueue * queue) {
 			free(h);
 		}
 		
-		if (udata == 0) // No work in the queue, wait here!
-			pthread_cond_wait(&queue->not_empty,&queue->queue_lock);
+		if (udata == 0) { 
+			if (queue->queue_end == 0) // No work in the queue, wait here!
+				pthread_cond_wait(&queue->not_empty,&queue->queue_lock);
+			else
+				break;  // No work and we are told to finish working
+		}
 		else
 			break;
 	}
