@@ -12,6 +12,8 @@
 #include <pcre.h>
 #include "pqueue.h"
 
+int verbose = 1;
+
 // Maximum query size, 1MB
 #define MAX_BUFFER_SIZE   (1024*1024)
 #define NUM_WORKERS       4
@@ -33,6 +35,7 @@ struct job_object {
 	char url2[8*1024];
 	char post[8*1024];
 	unsigned int ip;
+	unsigned int n;
 	callback_fn callback;
 };
 
@@ -41,7 +44,27 @@ struct job_object * new_job() {
 	memset(j,0,sizeof(struct job_object));
 	return j;
 }
-	
+
+
+void create_bing_url(char * url, unsigned int ip, int pagen) {
+	struct in_addr in;
+	in.s_addr = ip;
+	char * ipaddr = inet_ntoa(in);
+	sprintf(url, "http://www.bing.com/search?first=%d&q=IP:%s", pagen, ipaddr);
+}
+void create_dt_url(char * url, unsigned int ip) {
+	struct in_addr in;
+	in.s_addr = ip;
+	char * ipaddr = inet_ntoa(in);
+	sprintf(url, "http://reverseip.domaintools.com/search/?q=%s", ipaddr);
+}
+void create_webhostinfo_url(char * url, unsigned int ip, int pagen) {
+	struct in_addr in;
+	in.s_addr = ip;
+	char * ipaddr = inet_ntoa(in);
+	sprintf(url, "http://whois.webhosting.info/%s?pi=%d", ipaddr, pagen);
+}
+
 
 static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream) {
 	struct http_query * q = (struct http_query *)stream;
@@ -185,6 +208,7 @@ void webhostinfo_captcha(void * buffer, int size, struct pqueue * job_queue, str
 	memcpy(njob->url,job->url2,strlen(job->url2));
 	njob->callback = webhostinfo_parser;
 	njob->ip = job->ip;
+	njob->n = job->n;
 	sprintf(njob->post, "enck=%s&srch_value=%s&code=%s&subSecurity=Submit", enck, srch_value, code);
 	pqueue_push_front(job_queue, njob);
 
@@ -265,6 +289,7 @@ void webhostinfo_parser(void * buffer, int size, struct pqueue * job_queue,struc
 		memcpy(njob->url,img_url,strlen(img_url));
 		memcpy(njob->url2,job->url,sizeof(njob->url2));
 		njob->ip = job->ip;
+		njob->n = job->n;
 		njob->callback = webhostinfo_captcha;
 		pqueue_push_front(job_queue, njob);
 		return;
@@ -279,27 +304,18 @@ void webhostinfo_parser(void * buffer, int size, struct pqueue * job_queue,struc
 			printf("Match found %s\n",temp);
 		off = ovector[1];
 	}
+
+	// Schedule a new page if there's any
+	if (strstr(cbuffer,"Next&nbsp;&gt;&gt;") != 0) {
+		struct job_object * njob = new_job();
+		njob->ip = job->ip;
+		njob->n = job->n+1;
+		create_webhostinfo_url(njob->url,njob->ip,njob->n);
+		njob->callback = webhostinfo_parser;
+		pqueue_push_front(job_queue, njob);
+	}
 }
 
-
-void create_bing_url(char * url, unsigned int ip, int pagen) {
-	struct in_addr in;
-	in.s_addr = ip;
-	char * ipaddr = inet_ntoa(in);
-	sprintf(url, "http://www.bing.com/search?first=%d&q=IP:%s", pagen, ipaddr);
-}
-void create_dt_url(char * url, unsigned int ip) {
-	struct in_addr in;
-	in.s_addr = ip;
-	char * ipaddr = inet_ntoa(in);
-	sprintf(url, "http://reverseip.domaintools.com/search/?q=%s", ipaddr);
-}
-void create_webhostinfo_url(char * url, unsigned int ip, int pagen) {
-	struct in_addr in;
-	in.s_addr = ip;
-	char * ipaddr = inet_ntoa(in);
-	sprintf(url, "http://whois.webhosting.info/%s?pi=%d", ipaddr, pagen);
-}
 
 void mysql_initialize() {
 	char *server = getenv("MYSQL_HOST");
@@ -354,18 +370,18 @@ int main(char ** argv, int argc) {
 	while (result && (row = mysql_fetch_row(result))) {
 		unsigned int ip = ntohl(atoi(row[0]));
 		
-		for (i = 0; i < 5; i++) {
-			//create_bing_url(njob->url,ip,i);
-			//njob->callback = bing_parser;
-			//pqueue_push(&job_queue, njob);
-			//njob = new_job();
+		//create_bing_url(njob->url,ip,i);
+		//njob->callback = bing_parser;
+		//pqueue_push(&job_queue, njob);
+		//njob = new_job();
 
-			struct job_object * njob = new_job();
-			njob->ip = ip;
-			create_webhostinfo_url(njob->url,ip,i);
-			njob->callback = webhostinfo_parser;
-			pqueue_push(&job_queue, njob);
-		}
+		struct job_object * njob = new_job();
+		njob->ip = ip;
+		njob->n = 1;
+		create_webhostinfo_url(njob->url,ip,1);
+		njob->callback = webhostinfo_parser;
+		pqueue_push(&job_queue, njob);
+
 		//struct job_object * njob = new_job();
 		//create_dt_url(njob->url,ip);
 		//njob->callback = dt_parser;
