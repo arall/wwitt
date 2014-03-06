@@ -1,15 +1,15 @@
 <?php
 class Vuln_Host extends Model {
 	
-	var $id;
-	var $ip;
-	var $vulnId;
-	var $port;
-	var $virtualhostId;
-	var $status;
-	var $data;
-	var $dateAdd;
-	var $dateUpdate;
+	public $id;
+	public $ip;
+	public $vulnId;
+	public $port;
+	public $virtualhostId;
+	public $status;
+	public $data;
+	public $dateInsert;
+	public $dateUpdate;
 
 	public function init(){
 		parent::$idField = "id";
@@ -18,7 +18,7 @@ class Vuln_Host extends Model {
 	}
 
 	public function preInsert(){
-		$this->dateAdd = date("Y-d-m H:i:s");
+		$this->dateInsert = date("Y-d-m H:i:s");
 	}
 
 	public function preUpdate(){
@@ -54,4 +54,3 @@ class Vuln_Host extends Model {
 		}
 	}
 }
-?>

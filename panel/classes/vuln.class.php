@@ -1,12 +1,12 @@
 <?php
 class Vuln extends Model {
 	
-	var $id;
-	var $name;
-	var $type;
-	var $port;
-	var $exploitModule;
-	var $dateAdd;
+	public $id;
+	public $name;
+	public $type;
+	public $port;
+	public $exploitModule;
+	public $dateInsert;
 
 	public function init(){
 		parent::$idField = "id";
@@ -28,7 +28,7 @@ class Vuln extends Model {
 				return $res;
 			}
 		}else{
-			Registry::addMessage("Module '".$this->exploitModule."' not found", "danger");
+			Registry::addMessage("Module '".$this->exploitModule."' not found", "error");
 		}
 		return false;
 	}
@@ -50,4 +50,3 @@ class Vuln extends Model {
 		}
 	}
 }
-?>

@@ -1,20 +1,27 @@
 <?php
 class Service extends Model {
 	
-	var $id;
-	var $ip;
-	var $port;
-	var $status;
-	var $head;
-	var $name;
-	var $protocol;
-	var $product;
-	var $version;
-	var $info;
-	var $dateAdd;
+	public $id;
+	public $ip;
+	public $port;
+	public $filtered;
+	public $head;
+	public $name;
+	public $protocol;
+	public $product;
+	public $version;
+	public $info;
+	public $dateInsert;
 
-	var $statuses = array("Filtered", "Open");
-	public static $reservedVarsChild = array("statuses");
+	public $statusesCss = array(
+		0 => "danger",
+		1 => "success",
+	);
+	public $statuses = array(
+		0 => "Filtered",
+		1 => "Open",
+	);
+	public static $reservedVarsChild = array("statuses", "statusesCss");
 	
 	public function init(){
 		parent::$idField = "id";
@@ -22,8 +29,11 @@ class Service extends Model {
 		parent::$reservedVarsChild = self::$reservedVarsChild;
 	}
 
-	public function getStatusToString(){
-		return $this->statuses[$this->status];
+	public function getFilteredString(){
+		return $this->statuses[$this->filtered];
+	}
+
+	public function getFilteredCssString(){
+		return $this->statusesCss[$this->filtered];
 	}
 }
-?>

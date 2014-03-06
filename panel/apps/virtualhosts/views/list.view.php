@@ -1,27 +1,42 @@
 <?php defined('_EXE') or die('Restricted access'); ?>
 
-<h2>Virtual Hosts</h2>
-<?php if(count($virtualHosts)){ ?>
-	<table class="table table-condensed">
-		<thead>
-			<tr>
-				<td>Id</td>
-				<td>Host</td>
-				<td>Url</td>
-				<td>Date</td>
-			</tr>	
-		</thead>
-		<?php foreach($virtualHosts as $virtualHost){ ?>
-			<tr>
-				<td><?=$virtualHost->id?></td>
-				<td><?=$virtualHost->host?></td>
-				<td><?=$virtualHost->url?></td>
-				<td><?=$virtualHost->dateAdd?></td>
-			</tr>
-		<?php } ?>
-	</table>
-<?php }else{ ?>
-	<blockquote>
-		No data
-	</blockquote>
-<?php } ?>
+<h1>
+	<span class="glyphicon glyphicon-globe"></span>
+	Virtual Hosts
+</h1>
+<br>
+
+<form method="post" action="<?=Url::site("virtualHosts")?>">
+	<?php if(count($virtualHosts)){ ?>
+		<div class="table-responsive">
+			<table class="table table-striped">
+				<thead>
+					<tr>
+						<td>Host</td>
+						<td>Url</td>
+						<td>Date</td>
+					</tr>	
+				</thead>
+				<tbody>
+				<?php foreach($virtualHosts as $virtualHost){ ?>
+					<tr>
+						<td><?=$virtualHost->host?></td>
+						<td>
+							<a href="<?=$virtualHost->url?>" taget="_blank">
+								<?=$virtualHost->url?>
+							</a>
+						</td>
+						<td><?=Helper::humanDate($virtualHost->dateInsert)?></td>
+					</tr>
+				<?php } ?>
+				</tbody>
+			</table>
+			<?php $controller->setData("pag", $pag); ?>
+			<?=$controller->view("modules.pagination");?>
+		</div>
+	<?php }else{ ?>
+		<blockquote>
+			No data
+		</blockquote>
+	<?php } ?>
+</form>

@@ -13,10 +13,14 @@ class virtualhostsController extends Controller {
 	}
 	
 	public function index(){
-		$virtualHosts = VirtualHost::selectVirtualHosts();
+		$config = Registry::getConfig();
+		$pag['total'] = 0;
+		$pag['limit'] = $_REQUEST['limit'] ? $_REQUEST['limit'] : $config->get("defaultLimit");
+		$pag['limitStart'] = $_REQUEST['limitStart'];
+		$virtualHosts = VirtualHost::select($_REQUEST, $pag['limit'], $pag['limitStart'], $pag['total']);
 		$this->setData("virtualHosts", $virtualHosts);
+		$this->setData("pag", $pag);
 		$html .= $this->view("views.list");
 		$this->render($html);
 	}
 }
-?>

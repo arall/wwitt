@@ -13,8 +13,13 @@ class hostsController extends Controller {
 	}
 	
 	public function index(){
-		$hosts = Host::selectHosts();
+		$config = Registry::getConfig();
+		$pag['total'] = 0;
+		$pag['limit'] = $_REQUEST['limit'] ? $_REQUEST['limit'] : $config->get("defaultLimit");
+		$pag['limitStart'] = $_REQUEST['limitStart'];
+		$hosts = Host::select($_REQUEST, $pag['limit'], $pag['limitStart'], $pag['total']);
 		$this->setData("hosts", $hosts);
+		$this->setData("pag", $pag);
 		$html .= $this->view("views.list");
 		$this->render($html);
 	}
@@ -61,4 +66,3 @@ class hostsController extends Controller {
 		}
 	}
 }
-?>
