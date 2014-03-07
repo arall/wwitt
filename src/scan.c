@@ -207,6 +207,9 @@ void mysql_initialize() {
 	char *user = getenv("MYSQL_USER");
 	char *password = getenv("MYSQL_PASS");
 	char *database = getenv("MYSQL_DB");
+	
+	if (!server) server = "localhost";
+	
 	mysql_conn = mysql_init(NULL);
 	/* Connect to database */
 	printf("Connecting to mysqldb...\n");
@@ -470,8 +473,8 @@ void * database_dispatcher(void * args) {
 }
 
 void sql_prepare(char *q1, char *q2) {
-	strcpy(q1, "INSERT IGNORE INTO `hosts` (`ip`,`dateAdd`) VALUES ");
-	strcpy(q2, "INSERT IGNORE INTO `services` (`ip`, `port`, `filtered`,`dateAdd`) VALUES ");
+	strcpy(q1, "INSERT IGNORE INTO `hosts` (`ip`) VALUES ");
+	strcpy(q2, "INSERT IGNORE INTO `services` (`ip`, `port`, `filtered`) VALUES ");
 }
 
 void insert_register(struct in_addr ip, unsigned int port, unsigned int status, char *q1, char *q2) {
@@ -479,9 +482,9 @@ void insert_register(struct in_addr ip, unsigned int port, unsigned int status, 
 	if (q1[strlen(q1)-1] == ' ') comma = " ";
 	
 	char temp[4096];
-	sprintf(temp,"%s('%d',now())", comma, ntohl(ip.s_addr));
+	sprintf(temp,"%s('%d')", comma, ntohl(ip.s_addr));
 	strcat(q1,temp);
-	sprintf(temp,"%s('%d', '%d', '%d', now())", comma, ntohl(ip.s_addr), port, status-2);
+	sprintf(temp,"%s('%d', '%d', '%d')", comma, ntohl(ip.s_addr), port, status-2);
 	strcat(q2,temp);
 }
 
