@@ -168,14 +168,14 @@ void database_insert(const char * host, const char * ipaddr) {
 
 	pthread_mutex_lock(&update_mutex);
 	if (host) {
-		sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`, `dateAdd`) VALUES (%d, '%s', now())", ip, host);
+		sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`) VALUES (%d, '%s')", ip, host);
 		mysql_query(mysql_conn_update, tquery);
 	}
 	else
 	{
 		sprintf(tquery, "UPDATE `hosts` SET reverseIpStatus=1 WHERE ip=%d", ip);
 		mysql_query(mysql_conn_update, tquery);
-		sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`, `dateAdd`) VALUES (%d, '%s', now())", ip, ipaddr);
+		sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`) VALUES (%d, '%s')", ip, ipaddr);
 		mysql_query(mysql_conn_update, tquery);
 	}
 	pthread_mutex_unlock(&update_mutex);
