@@ -1,4 +1,6 @@
 
+#define _GNU_SOURCE
+
 #include <poll.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -15,7 +17,6 @@
 #include <semaphore.h>
 #include <mysql.h>
 #include <sys/resource.h> 
-
 
 #define BUFSIZE (1024*1024)   // maximum size of any datagram(16 bits the size of identifier)
 #define TRUE 1
@@ -95,7 +96,7 @@ char* parse_response(char * buffer, int size, const char * domain) {
 	// Look for redirects only in the header
 	buffer[size] = 0;
 	char * limit = strstr(buffer,"\r\n\r\n");
-	char * location = strstr(buffer,"Location:");
+	char * location = strcasestr(buffer,"Location:");
 
 	if (limit == 0 || location == 0) return 0;
 	if ((uintptr_t)location > (uintptr_t)limit) return 0;
@@ -263,6 +264,7 @@ int main(int argc, char **argv) {
 				if (rec > 0) {
 					cq->received += rec;
 					cq->inbuffer = realloc(cq->inbuffer, cq->received + READBUF_CHUNK + 32);
+					cq->inbuffer[cq->received] = 0; // Add zero to avoid strings running out the buffer
 				}
 				else if (rec == 0) {
 					// End of data. OK if we sent all the data only
@@ -350,6 +352,67 @@ void separate_body(char * buffer, int size, char ** buf1, char ** buf2, int * le
 	*buf2 = bodybody;
 }
 
+int parse_hex(const char * cptr) {
+	int ret = 0;
+	int valid;
+	do {
+		valid = 1;
+		
+		if (*cptr >= '0' && *cptr <= '9')
+			ret = (ret << 4) | (*cptr - '0');
+		else if (*cptr >= 'a' && *cptr <= 'f')
+			ret = (ret << 4) | (*cptr - 'a' + 10);
+		else if (*cptr >= 'A' && *cptr <= 'F')
+			ret = (ret << 4) | (*cptr - 'A' + 10);
+		else
+			valid = 0;
+		cptr++;
+
+	} while (valid);
+	return ret;
+}
+
+// In case of "Transfer-Encoding: chunked" de-chunk the HTTP body
+void dechunk_http(char * buffer, int * size) {
+	char * head, * body;
+	int head_len, body_len;
+	separate_body(buffer, *size, &head, &body, &head_len, &body_len);
+	if (body_len == 0) return;
+	
+	// Look for Transfer-encoding
+	char * chunk = strcasestr(head, "Transfer-encoding");
+	if (!chunk || ((uintptr_t)chunk > (uintptr_t)body) ) return;
+	// Look for the "chunked" word before the next break line
+	char * chunkend = strstr(chunk, "\r\n");
+	if (!chunkend || ((uintptr_t)chunkend > (uintptr_t)body) ) return;
+	
+	char * chunked = strcasestr(chunk, "chunked");
+	if (!chunked || ((uintptr_t)chunked > (uintptr_t)body) ) return;
+	
+	// Now proceed to dechunk the body
+	char * newbuffer = malloc(*size+32);
+	memcpy(newbuffer, buffer, head_len+4);
+	char * newbody = &newbuffer[head_len+4];
+	int newlen = head_len+4;
+	while ( (uintptr_t)body < (uintptr_t)&buffer[*size] ) {
+		int len = parse_hex(body);
+		if (len + newlen > *size) break; // Overflow, should not happen
+		if (len == 0) break;  // Last chunk
+		body = strstr(body, "\r\n");
+		if (!body) break;
+		body += 2;
+		memcpy(newbody, body, len);
+		newbody += len;
+		body += (len+2);  // Skip \r\n
+		newlen += len;
+	}
+	
+	// Copy and free!
+	memcpy(buffer, newbuffer, newlen);
+	*size = newlen;
+	free(newbuffer);
+}
+
 // Walk the table from time to time and insert results into the database
 void * database_dispatcher(void * args) {
 	int bannercrawl = *(int*)args;
@@ -363,6 +426,7 @@ void * database_dispatcher(void * args) {
 			struct connection_query * cquery = &connection_table[i];
 			if (cquery->status == 100 || cquery->status == 101) {
 				// Analyze the response, maybe we find some redirects
+				dechunk_http(cquery->inbuffer,&cquery->received);
 				char* newloc = parse_response(cquery->inbuffer, cquery->received, cquery->usrdata);
 				
 				if (newloc != 0) {
