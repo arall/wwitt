@@ -16,7 +16,7 @@ int verbose = 1;
 
 // Maximum query size, 1MB
 #define MAX_BUFFER_SIZE   (1024*1024)
-#define NUM_WORKERS       4
+#define NUM_WORKERS       12
 
 MYSQL *mysql_conn_select;
 MYSQL *mysql_conn_update;
@@ -173,7 +173,7 @@ void database_insert(const char * host, const char * ipaddr) {
 	}
 	else
 	{
-		sprintf(tquery, "UPDATE `hosts` SET reverseIpStatus=1 WHERE ip=%d", ip);
+		sprintf(tquery, "UPDATE `hosts` SET `reverseIpStatus`=1, `dateUpdate`=now() WHERE ip=%d", ip);
 		mysql_query(mysql_conn_update, tquery);
 		sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`) VALUES (%d, '%s')", ip, ipaddr);
 		mysql_query(mysql_conn_update, tquery);
@@ -313,6 +313,10 @@ void webhostinfo_parser(void * buffer, int size, struct pqueue * job_queue,struc
 		create_webhostinfo_url(njob->url,njob->ip,njob->n);
 		njob->callback = webhostinfo_parser;
 		pqueue_push_front(job_queue, njob);
+	}
+	else {
+		// Done with this IP, add it as vhost and mark as done
+		database_insert(0, ipaddr);
 	}
 }
 

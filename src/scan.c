@@ -169,7 +169,7 @@ int main(int argc, char **argv) {
 		alldevsp = alldevsp->next;
 	}
 	if (alldevsp == NULL) {
-		fprintf(stderr, "Could not open %d dev for pcap!\n", argv[5]);
+		fprintf(stderr, "Could not open %s dev for pcap!\n", argv[5]);
 		exit(1);
 	}
 	

@@ -16,6 +16,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <mysql.h>
+#include <errmsg.h>
 #include <sys/resource.h> 
 
 #define BUFSIZE (1024*1024)   // maximum size of any datagram(16 bits the size of identifier)
@@ -26,8 +27,9 @@
 
 #define READBUF_CHUNK 4096
 
-#define MAX_TIMEOUT 10000   // In mseconds
-#define MAX_RETRIES 2
+#define MAX_TIMEOUT 10   // In seconds
+#define MAX_RETRIES 10
+#define MAX_REDIRS  10
 
 #define MAX_OUTSTANDING_QUERIES (1024*64)
 struct connection_query {
@@ -47,8 +49,9 @@ struct connection_query {
 
 struct pollfd poll_desc[MAX_OUTSTANDING_QUERIES];
 
-MYSQL *mysql_conn_select;
-MYSQL *mysql_conn_update;
+MYSQL *mysql_conn_select = 0;
+MYSQL *mysql_conn_update = 0;
+MYSQL *mysql_conn_update2 = 0;
 
 void * database_dispatcher(void * args);
 void * query_adder(void * args);
@@ -167,7 +170,11 @@ int main(int argc, char **argv) {
 	// Initialize structures
 	memset(&connection_table, 0, sizeof(connection_table));
 	
+	signal(SIGPIPE, SIG_IGN);
 	mysql_initialize();
+	
+	// Clear "inflight flag"
+	mysql_query(mysql_conn_update,"UPDATE `virtualhosts` SET `flags`=`flags`&(~1)");
 	
 	// Start!
 	pthread_t db;
@@ -175,27 +182,28 @@ int main(int argc, char **argv) {
 
 	int num_active = 0;	
 	// Infinite loop: query IP/Domain blocks
-	char * query = "SELECT DISTINCT `ip`, `host` FROM virtualhosts WHERE `head` IS null OR `index` IS null  LIMIT %d";
-	if (bannercrawl) query = "SELECT `ip`, `port` FROM services WHERE `head` IS null LIMIT %d";
+	char * query = "SELECT DISTINCT `ip`, `host` FROM virtualhosts WHERE (`head` IS null OR `index` IS null) AND `flags`&1 = 0";
+	if (bannercrawl) query = "SELECT `ip`, `port` FROM services WHERE `head` IS null AND `flags`&1 = 0";
 	while (1) {
 		// Generate queries and generate new connections
 		if (num_active < max_inflight) {
-			printf("Num active %d\n",num_active);
-			char tquery[1024];
-			sprintf(tquery, query, 100);
-			mysql_query(mysql_conn_select, tquery);
+			mysql_query(mysql_conn_select, query);
 			MYSQL_RES *result = mysql_store_result(mysql_conn_select);
 			if (!result) break;
-		
+			
+			int num_rem = mysql_num_rows(result);
+			if (num_rem == 0 && num_active == 0) break; // End!
+			
+			printf("\rNum active: %d Remaining: %d ...   ",num_active, num_rem); fflush(stdout);
+
+			int injected = 0;		
 			MYSQL_ROW row;
-			while ((row = mysql_fetch_row(result))) {
+			while ((row = mysql_fetch_row(result)) && injected++ < max_inflight) {
 				struct connection_query cquery;
 				cquery.ip = (atoi(row[0]));
 				cquery.status = 1;
-				cquery.retries = 0;
-				cquery.redirs = 0;
-				cquery.tosend_max = 0;
-				cquery.tosend_offset = 0;
+				cquery.retries = cquery.redirs = 0;
+				cquery.tosend_max = cquery.tosend_offset = 0;
 				cquery.received = 0;
 				cquery.inbuffer = malloc(READBUF_CHUNK+32);
 				memset(cquery.inbuffer,0,READBUF_CHUNK+32);
@@ -224,6 +232,11 @@ int main(int argc, char **argv) {
 						break;
 					}
 				}
+				
+				// Mark it as in process
+				char upq[2048];
+				sprintf(upq,"UPDATE `virtualhosts` SET `flags`=`flags`|1 WHERE `ip`=%s AND `host`=\"%s\"", row[0], row[1]);
+				mysql_query(mysql_conn_update2,upq);
 			}
 		}
 		
@@ -319,22 +332,31 @@ int main(int argc, char **argv) {
 	pthread_join(db, NULL);
 }
 
-void mysql_initialize() {
+void db_reconnect(MYSQL ** c) {
+	if (*c)
+		mysql_close(*c);
+
 	char *server = getenv("MYSQL_HOST");
 	char *user = getenv("MYSQL_USER");
 	char *password = getenv("MYSQL_PASS");
 	char *database = getenv("MYSQL_DB");
-	mysql_conn_select = mysql_init(NULL);
-	mysql_conn_update = mysql_init(NULL);
-	/* Connect to database */
-	printf("Connecting to mysqldb...\n");
-	if (!mysql_real_connect(mysql_conn_select, server, user, password, database, 0, NULL, 0) || 
-		!mysql_real_connect(mysql_conn_update, server, user, password, database, 0, NULL, 0) ) {
-		fprintf(stderr, "%s\n", mysql_error(mysql_conn_select));
-		fprintf(stderr, "%s\n", mysql_error(mysql_conn_update));
+	
+	*c = mysql_init(NULL);
+	// Eanble auto-reconnect, as some versions do not enable it by default
+	my_bool reconnect = 1;
+	mysql_options(*c, MYSQL_OPT_RECONNECT, &reconnect);
+	if (!mysql_real_connect(*c, server, user, password, database, 0, NULL, 0)) {
 		fprintf(stderr, "User %s Pass %s Host %s Database %s\n", user, password, server, database);
 		exit(1);
 	}
+}
+
+void mysql_initialize() {
+	/* Connect to database */
+	printf("Connecting to mysqldb...\n");
+	db_reconnect(&mysql_conn_select);
+	db_reconnect(&mysql_conn_update);
+	db_reconnect(&mysql_conn_update2);
 	printf("Connected!\n");
 }
 
@@ -429,9 +451,8 @@ void * database_dispatcher(void * args) {
 				dechunk_http(cquery->inbuffer,&cquery->received);
 				char* newloc = parse_response(cquery->inbuffer, cquery->received, cquery->usrdata);
 				
-				if (newloc != 0) {
+				if (newloc != 0 && cquery->redirs < MAX_REDIRS) {
 					// Reuse the same entry for the request
-					//printf("%s\n", cquery->usrdata);
 					cquery->retries = 0;
 					cquery->redirs++;
 					cquery->tosend_offset = 0;
@@ -451,16 +472,16 @@ void * database_dispatcher(void * args) {
 					//cquery->usrdata = newloc;
 					free(newloc);
 
-					//printf("Redir! %s %s\n", newloc, cquery->outbuffer);
 					cquery->status = 1;
 				}
 				else{ 
 					if (bannercrawl) {
 						char tempb[cquery->received*2+2];
 						mysql_real_escape_string(mysql_conn_update, tempb, cquery->inbuffer, cquery->received);
-						sprintf(sql_query, "UPDATE services SET `head`='%s' WHERE `ip`=%d AND `port`=%d\n",
+						sprintf(sql_query, "UPDATE services SET `head`='%s',`flags`=`flags`&(~1) WHERE `ip`=%d AND `port`=%d\n",
 							tempb, cquery->ip, cquery->port);
 					}else{
+						int eflag = cquery->status == 101 ? 0x80 : 0;
 						char tempb [cquery->received*2+2];
 						char tempb_[cquery->received*2+2];
 						int len1, len2; char *p1, *p2;
@@ -470,10 +491,15 @@ void * database_dispatcher(void * args) {
 						mysql_real_escape_string(mysql_conn_update, tempb_, p2, len2);
 						char tempb2[strlen(cquery->usrdata)*2+2];
 						mysql_real_escape_string(mysql_conn_update, tempb2, cquery->usrdata, strlen(cquery->usrdata));
-						sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s' WHERE `ip`=%d AND `host`=\"%s\"\n", tempb_, tempb, cquery->ip, tempb2);
+						sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`flags`=(`flags`&(~1))|%d WHERE `ip`=%d AND `host`=\"%s\";", tempb_, tempb, eflag, cquery->ip, tempb2);
 					}
 					num_processed++;
-					mysql_query(mysql_conn_update,sql_query);
+					if (mysql_query(mysql_conn_update,sql_query)) {
+						if (mysql_errno(mysql_conn_update) == CR_SERVER_GONE_ERROR) {
+							printf("Reconnect due to connection drop\n");
+							db_reconnect(&mysql_conn_update);
+						}
+					}
 
 					// Entry cleanup
 					clean_entry(cquery);
