@@ -41,6 +41,7 @@ struct connection_query {
 	unsigned char redirs;
 	
 	void * usrdata;
+	void * usrdata_ext;
 	int tosend_max, tosend_offset;
 	int received;
 	char *inbuffer, *outbuffer;
@@ -131,6 +132,7 @@ char* parse_response(char * buffer, int size, const char * domain) {
 void clean_entry(struct connection_query * q) {
 	close(q->socket);
 	if (q->usrdata) free(q->usrdata);
+	if (q->usrdata_ext) free(q->usrdata_ext);
 	if (q->inbuffer) free(q->inbuffer);
 	if (q->outbuffer) free(q->outbuffer);
 	q->status = 0;
@@ -209,6 +211,7 @@ int main(int argc, char **argv) {
 				memset(cquery.inbuffer,0,READBUF_CHUNK+32);
 				cquery.outbuffer = 0;
 				cquery.usrdata = 0;
+				cquery.usrdata_ext = 0;
 				cquery.socket = socket(AF_INET, SOCK_STREAM, 0);
 				cquery.start_time = time(0);
 				setNonblocking(cquery.socket);
@@ -222,6 +225,8 @@ int main(int argc, char **argv) {
 					cquery.port = 80;
 					cquery.usrdata = malloc(strlen(vhost)+1);
 					memcpy(cquery.usrdata,vhost,strlen(vhost)+1);
+					cquery.usrdata_ext = malloc(strlen(vhost)+1+1+7);
+					sprintf(cquery.usrdata_ext,"http://%s/", vhost);
 				}
 			
 				// Look for an empty entry
@@ -469,7 +474,8 @@ void * database_dispatcher(void * args) {
 					char * path = newloc + (strlen(newloc)+1);
 					cquery->outbuffer = generateHTTPQuery(newloc,path);
 					cquery->tosend_max = strlen(cquery->outbuffer);
-					//cquery->usrdata = newloc;
+					cquery->usrdata_ext = realloc(cquery->usrdata_ext, strlen(newloc)+strlen(path)+1+7);
+					sprintf(cquery->usrdata_ext, "http://%s%s", newloc, path);
 					free(newloc);
 
 					cquery->status = 1;
@@ -489,9 +495,13 @@ void * database_dispatcher(void * args) {
 
 						mysql_real_escape_string(mysql_conn_update, tempb,  p1, len1);
 						mysql_real_escape_string(mysql_conn_update, tempb_, p2, len2);
+
 						char tempb2[strlen(cquery->usrdata)*2+2];
+						char tempb3[strlen(cquery->usrdata_ext)*2+2];
 						mysql_real_escape_string(mysql_conn_update, tempb2, cquery->usrdata, strlen(cquery->usrdata));
-						sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`flags`=(`flags`&(~1))|%d WHERE `ip`=%d AND `host`=\"%s\";", tempb_, tempb, eflag, cquery->ip, tempb2);
+						mysql_real_escape_string(mysql_conn_update, tempb3, cquery->usrdata_ext, strlen(cquery->usrdata_ext));
+
+						sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`flags`=(`flags`&(~1))|%d WHERE `ip`=%d AND `host`=\"%s\";", tempb_, tempb, tempb3, eflag, cquery->ip, tempb2);
 					}
 					num_processed++;
 					if (mysql_query(mysql_conn_update,sql_query)) {

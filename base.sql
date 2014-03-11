@@ -15,11 +15,11 @@
 DROP TABLE IF EXISTS `hosts`;
 CREATE TABLE IF NOT EXISTS `hosts` (
   `ip` int(10) unsigned NOT NULL,
-  `reverseIpStatus` int(1) NOT NULL DEFAULT '0',
   `hostname` varchar(50) DEFAULT NULL,
   `os` varchar(50) DEFAULT NULL,
   `dateInsert` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `dateUpdate` timestamp NULL DEFAULT NULL,
+  `status` tinyint(255) unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`ip`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -71,8 +71,8 @@ DROP VIEW IF EXISTS `viewhosts`;
 # Creating temporary table to overcome VIEW dependency errors
 CREATE TABLE `viewhosts` (
   `ipAdress` VARCHAR(31) NULL DEFAULT NULL COLLATE 'utf8_general_ci',
-  `ip` INT(10) UNSIGNED NOT NULL DEFAULT '',
-  `reverseIpStatus` INT(1) NOT NULL DEFAULT '0',
+  `ip` INT(10) UNSIGNED NOT NULL DEFAULT 0,
+  `status` INT(1) NOT NULL DEFAULT '0',
   `hostname` VARCHAR(50) NULL DEFAULT NULL COLLATE 'latin1_swedish_ci',
   `os` VARCHAR(50) NULL DEFAULT NULL COLLATE 'latin1_swedish_ci',
   `dateInsert` TIMESTAMP NULL DEFAULT NULL,
@@ -85,16 +85,14 @@ CREATE TABLE `viewhosts` (
 # Dumping structure for table wwitt.virtualhosts
 DROP TABLE IF EXISTS `virtualhosts`;
 CREATE TABLE IF NOT EXISTS `virtualhosts` (
-  `ip` int(10) unsigned NOT NULL,
   `host` varchar(50) NOT NULL,
   `url` varchar(512) DEFAULT NULL,
   `head` text,
   `index` mediumtext,
   `robots` mediumtext,
   `dateInsert` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`ip`,`host`),
-  UNIQUE KEY `ipId_host` (`ip`,`host`),
-  CONSTRAINT `virtualHosts_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
+  `status` tinyint(255) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`host`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 # Data exporting was unselected.
@@ -143,7 +141,7 @@ CREATE TABLE IF NOT EXISTS `vulns_hosts` (
 DROP VIEW IF EXISTS `viewhosts`;
 # Removing temporary table and create final VIEW structure
 DROP TABLE IF EXISTS `viewhosts`;
-CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `viewhosts` AS select inet_ntoa(`hosts`.`ip`) AS `ipAdress`,`hosts`.`ip` AS `ip`,`hosts`.`reverseIpStatus` AS `reverseIpStatus`,`hosts`.`hostname` AS `hostname`,`hosts`.`os` AS `os`,`hosts`.`dateInsert` AS `dateInsert`,`hosts`.`dateUpdate` AS `dateUpdate`,(select count(`services`.`ip`) from `services` where (`services`.`ip` = `hosts`.`ip`)) AS `totalServices`,(select count(`virtualhosts`.`ip`) from `virtualhosts` where (`virtualhosts`.`ip` = `hosts`.`ip`)) AS `totalVirtualhosts` from `hosts`;
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `viewhosts` AS select inet_ntoa(`hosts`.`ip`) AS `ipAdress`,`hosts`.`ip` AS `ip`,`hosts`.`status` AS `status`,`hosts`.`hostname` AS `hostname`,`hosts`.`os` AS `os`,`hosts`.`dateInsert` AS `dateInsert`,`hosts`.`dateUpdate` AS `dateUpdate`,(select count(`services`.`ip`) from `services` where (`services`.`ip` = `hosts`.`ip`)) AS `totalServices`,(select count(`virtualhosts`.`ip`) from `virtualhosts` where (`virtualhosts`.`ip` = `hosts`.`ip`)) AS `totalVirtualhosts` from `hosts`;
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
 /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

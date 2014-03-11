@@ -266,12 +266,12 @@ struct in_addr nextip() {
 }
 
 // This thread creates packets, accounts them and then sends them through the wire
+volatile unsigned long long injected_packets = 0;
 void * query_adder(void * args) {
 	// For each IP, forge a packet for each port
 	sleep(1);
 	
 	int i,j;
-	unsigned long long injected_packets = 0;
 	unsigned int init_time = time(0);
 	for (i = 0; i < total_ips && adder_finish == 0; i++) {
 		struct in_addr ip_dst = nextip();
@@ -460,7 +460,8 @@ void * database_dispatcher(void * args) {
 		} while (ptr > 0);
 
 		sleep(1);
-		printf("Outstanding scans: %d\n",num_t_ent);
+		int p = 100.0f*injected_packets/(total_ips*total_ports);
+		printf("\rOutstanding scans: %d   (%d%% done)    ",num_t_ent, p); fflush(stdout);
 	} while (!adder_finish || num_t_ent > 0);
 	
 	flush_db(sql_query[0],sql_query[1]);
@@ -482,9 +483,9 @@ void insert_register(struct in_addr ip, unsigned int port, unsigned int status, 
 	if (q1[strlen(q1)-1] == ' ') comma = " ";
 	
 	char temp[4096];
-	sprintf(temp,"%s('%d')", comma, ntohl(ip.s_addr));
+	sprintf(temp,"%s('%u')", comma, ntohl(ip.s_addr));
 	strcat(q1,temp);
-	sprintf(temp,"%s('%d', '%d', '%d')", comma, ntohl(ip.s_addr), port, status-2);
+	sprintf(temp,"%s('%u', '%u', '%d')", comma, ntohl(ip.s_addr), port, status-2);
 	strcat(q2,temp);
 }
 

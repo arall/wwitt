@@ -168,15 +168,18 @@ void database_insert(const char * host, const char * ipaddr) {
 
 	pthread_mutex_lock(&update_mutex);
 	if (host) {
-		sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`) VALUES (%d, '%s')", ip, host);
+		// Add one host
+		sprintf(tquery, "INSERT INTO `virtualhosts` (`host`) VALUES (LOWER('%s'))", host);
 		mysql_query(mysql_conn_update, tquery);
 	}
 	else
 	{
-		sprintf(tquery, "UPDATE `hosts` SET `reverseIpStatus`=1, `dateUpdate`=now() WHERE ip=%d", ip);
+		// Mark the host as done
+		sprintf(tquery, "UPDATE `hosts` SET `status`=`status`|1, `dateUpdate`=now() WHERE ip=%u", ip);
 		mysql_query(mysql_conn_update, tquery);
-		sprintf(tquery, "INSERT INTO `virtualhosts` (`ip`, `host`) VALUES (%d, '%s')", ip, ipaddr);
-		mysql_query(mysql_conn_update, tquery);
+		// Insert the host as vhost too only if port 80 is open (not filtered)
+		//sprintf(tquery, "INSERT INTO `virtualhosts` (`host`) SELECT '%s' WHERE (SELECT COUNT(*) FROM `services` WHERE `port`=80 AND `filtered`=0 AND `ip.. ) ", ipaddr);
+		//mysql_query(mysql_conn_update, tquery);
 	}
 	pthread_mutex_unlock(&update_mutex);
 }
@@ -341,7 +344,7 @@ void mysql_initialize() {
 }
 
 
-int main(char ** argv, int argc) {
+int main(int argc, char **argv) {
 	printf(
 "  __      __  __      __  ______  ______  ______    \n"
 " /\\ \\  __/\\ \\/\\ \\  __/\\ \\/\\__  _\\/\\__  _\\/\\__  _\\   \n"
@@ -353,6 +356,21 @@ int main(char ** argv, int argc) {
 "                                                    \n"
 "         World Wide Internet Takeover Tool          \n"
 "                Reverse IP crawler                  \n"  );
+
+	if (argc == 2 && strcmp(argv[1],"-h") == 0) {
+		fprintf(stderr,"Usage: %s [IPstart IPend]\n", argv[0]);
+		exit(0);
+	}
+
+	unsigned long start_ip =  0;
+	unsigned long end_ip   = ~0;
+	if (argc == 3) {
+		inet_aton(argv[1], (struct in_addr*)&start_ip);
+		inet_aton(argv[2], (struct in_addr*)&end_ip);
+		start_ip = ntohl(start_ip);
+		end_ip = ntohl(end_ip);
+		printf("Filtering IPS: %u ... %u\n", start_ip, end_ip);
+	}
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 	mysql_initialize();
@@ -368,7 +386,9 @@ int main(char ** argv, int argc) {
 		pthread_create (&curl_workers[i], NULL, &worker_thread, &job_queue);
 
 	// Now query IPs and enqueue jobs
-	mysql_query(mysql_conn_select, "SELECT `ip` FROM hosts WHERE reverseIpStatus=0");
+	char sql_query[2048];
+	sprintf(sql_query, "SELECT `ip` FROM `hosts` WHERE `status`&1=0 AND `ip` >= %u AND `ip` <= %u", start_ip, end_ip);
+	mysql_query(mysql_conn_select, sql_query);
 	MYSQL_RES *result = mysql_store_result(mysql_conn_select);
 	MYSQL_ROW row;
 	while (result && (row = mysql_fetch_row(result))) {
