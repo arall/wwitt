@@ -7,7 +7,7 @@ scan:
 	gcc -o scan scan.c -lpcap  -lpthread -O2 `mysql_config --include` `mysql_config --libs`
 
 crawler:
-	gcc -o crawler crawler.c -lpthread -O0 -ggdb `mysql_config --include` `mysql_config --libs`
+	g++ -o crawler crawler.cc -lpthread -O0 -ggdb `mysql_config --include` `mysql_config --libs`
 
 vhost:
 	g++ -o captcha.o -c captcha.cc  -O0 -ggdb
