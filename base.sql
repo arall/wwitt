@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS `services` (
   `port` smallint(5) unsigned NOT NULL,
   `filtered` int(1) DEFAULT NULL,
   `head` text,
-  `name` varchar(50) DEFAULT NULL,
   `protocol` varchar(50) DEFAULT NULL,
+  `product` varchar(50) DEFAULT NULL,
   `version` varchar(50) DEFAULT NULL,
   `dateInsert` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`ip`,`port`),
@@ -64,8 +64,21 @@ CREATE TABLE IF NOT EXISTS `users` (
 DELETE FROM `users`;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
 INSERT INTO `users` (`id`, `username`, `password`, `lastvisitDate`, `dateInsert`, `dateUpdate`) VALUES
-	(1, 'admin', '0c7540eb7e65b553ec1ba6b20de79608', '2014-03-10 22:15:27', '2014-03-10 22:13:46', '2014-03-10 22:15:27');
+	(1, 'admin', '0c7540eb7e65b553ec1ba6b20de79608', '2014-03-12 21:45:57', '2014-03-10 22:13:46', '2014-03-12 21:45:57');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
+
+
+-- Dumping structure for view wwitt.viewHosts
+DROP VIEW IF EXISTS `viewHosts`;
+-- Creating temporary table to overcome VIEW dependency errors
+CREATE TABLE `viewHosts` (
+	`ip` INT(10) UNSIGNED NOT NULL,
+	`ipAdress` VARCHAR(31) NULL COLLATE 'utf8_general_ci',
+	`status` TINYINT(255) UNSIGNED NOT NULL,
+	`totalServices` BIGINT(21) NULL,
+	`dateInsert` TIMESTAMP NULL,
+	`dateUpdate` TIMESTAMP NULL
+) ENGINE=MyISAM;
 
 
 -- Dumping structure for table wwitt.virtualhosts
@@ -114,16 +127,19 @@ INSERT INTO `vulns` (`module`, `name`, `type`, `protocol`, `webappName`, `minVer
 -- Dumping structure for table wwitt.vulns_hosts
 DROP TABLE IF EXISTS `vulns_hosts`;
 CREATE TABLE IF NOT EXISTS `vulns_hosts` (
-  `ip` int(10) unsigned NOT NULL DEFAULT '0',
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `ip` int(10) unsigned DEFAULT '0',
+  `host` varchar(50) DEFAULT NULL,
   `vuln` varchar(50) NOT NULL DEFAULT '0',
+  `port` smallint(5) unsigned NOT NULL DEFAULT '0',
   `status` tinyint(255) NOT NULL DEFAULT '0',
   `webappId` int(10) NOT NULL DEFAULT '0',
   `data` text,
   `dateInsert` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `dateUpdate` timestamp NULL DEFAULT NULL,
-  PRIMARY KEY (`ip`,`vuln`),
-  UNIQUE KEY `ip_vuln` (`ip`,`vuln`),
-  CONSTRAINT `vuln_hosts_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE
+  PRIMARY KEY (`id`),
+  KEY `vuln_hosts_vuln` (`vuln`),
+  CONSTRAINT `vuln_hosts_vuln` FOREIGN KEY (`vuln`) REFERENCES `vulns` (`module`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- Dumping data for table wwitt.vulns_hosts: ~0 rows (approximately)
@@ -150,6 +166,13 @@ CREATE TABLE IF NOT EXISTS `webapps` (
 DELETE FROM `webapps`;
 /*!40000 ALTER TABLE `webapps` DISABLE KEYS */;
 /*!40000 ALTER TABLE `webapps` ENABLE KEYS */;
+
+
+-- Dumping structure for view wwitt.viewHosts
+DROP VIEW IF EXISTS `viewHosts`;
+-- Removing temporary table and create final VIEW structure
+DROP TABLE IF EXISTS `viewHosts`;
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `viewHosts` AS select `hosts`.`ip` AS `ip`,inet_ntoa(`hosts`.`ip`) AS `ipAdress`,`hosts`.`status` AS `status`,(select count(0) from `services` where (`services`.`ip` = `hosts`.`ip`)) AS `totalServices`,`hosts`.`dateInsert` AS `dateInsert`,`hosts`.`dateUpdate` AS `dateUpdate` from `hosts`;
 /*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
 /*!40014 SET FOREIGN_KEY_CHECKS=IF(@OLD_FOREIGN_KEY_CHECKS IS NULL, 1, @OLD_FOREIGN_KEY_CHECKS) */;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
