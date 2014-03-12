@@ -40,26 +40,6 @@
 					</div>
 					<div class="form-group">
 						<label for="host" class="col-sm-4 control-label">
-							Hostname
-						</label>
-						<div class="col-sm-8">
-							<p class="form-control-static">
-								<?=$host->hostname?>
-							<p>
-						</div>
-					</div>
-					<div class="form-group">
-						<label for="host" class="col-sm-4 control-label">
-							Operative System
-						</label>
-						<div class="col-sm-8">
-							<p class="form-control-static">
-								<?=$host->os?>
-							<p>
-						</div>
-					</div>
-					<div class="form-group">
-						<label for="host" class="col-sm-4 control-label">
 							Date Added
 						</label>
 						<div class="col-sm-8">
@@ -144,40 +124,6 @@
 				</div>
 		  	</div>
 		</div>
-		<?php } ?>
-		<?php if($virtualHosts){ ?>
-			<div class="panel panel-default">
-				<div class="panel-heading">
-					<span class="glyphicon glyphicon-globe"></span>
-					 Virtual Hosts
-				</div>
-			  	<div class="panel-body">
-			  		<div class="table-responsive">
-						<table class="table table-striped">
-							<thead>
-								<tr>
-									<td>Host</td>
-									<td>Url</td>
-									<td>Date</td>
-								</tr>	
-							</thead>
-							<tbody>
-							<?php foreach($virtualHosts as $virtualHost){ ?>
-								<tr>
-									<td><?=$virtualHost->host?></td>
-									<td>
-										<a href="<?=$virtualHost->url?>" taget="_blank">
-											<?=$virtualHost->url?>
-										</a>
-									</td>
-									<td><?=Helper::humanDate($virtualHost->dateInsert)?></td>
-								</tr>
-							<?php } ?>
-							</tbody>
-						</table>
-					</div>
-			  	</div>
-			</div>
 		<?php } ?>
 	</div>
 </div>

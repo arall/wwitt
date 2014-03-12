@@ -105,9 +105,9 @@ CREATE TABLE IF NOT EXISTS `vulns` (
 DELETE FROM `vulns`;
 /*!40000 ALTER TABLE `vulns` DISABLE KEYS */;
 INSERT INTO `vulns` (`module`, `name`, `type`, `protocol`, `webappName`, `minVersion`, `maxVersion`, `dateInsert`) VALUES
-	('httpWeakLogin', 'HTTP Weak Login', 1, '80', NULL, '0', '0', NULL),
-	('sshWeakLogin', 'SSH Weak Login', 1, '22', NULL, '0', '0', NULL),
-	('telnetWeakLogin', 'Telnet Weak Login', 1, '23', NULL, '0', '0', NULL);
+	('httpWeakLogin', 'HTTP Weak Login', 1, 'http', NULL, '0', '0', NULL),
+	('sshWeakLogin', 'SSH Weak Login', 1, 'ssh', NULL, '0', '0', NULL),
+	('telnetWeakLogin', 'Telnet Weak Login', 1, 'telnet', NULL, '0', '0', NULL);
 /*!40000 ALTER TABLE `vulns` ENABLE KEYS */;
 
 

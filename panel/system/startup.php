@@ -33,7 +33,7 @@ include('Net/SSH2.php');
 //Registry
 $registry = new Registry();
 
-if(!CLI_DEBUG){
+if(!defined('CLI_DEBUG')){
     //Router
     $router = new Router();
     $router->delegate();

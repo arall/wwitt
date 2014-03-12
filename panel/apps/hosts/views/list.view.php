@@ -14,10 +14,7 @@
 					<tr>
 						<td>IP</td>
 						<td>Status</td>
-						<td>Hostname</td>
-						<td>OS</td>
 						<td>Services</td>
-						<td>Virtual Hosts</td>
 						<td>Date</td>
 					</tr>	
 				</thead>
@@ -34,10 +31,7 @@
 								<?=$host->getStatusString();?>
 							</span>
 						</td>
-						<td><?=$host->hostname?></td>
-						<td><?=$host->os?></td>
 						<td><?=$host->totalServices?></td>
-						<td><?=$host->totalVirtualhosts?></td>
 						<td><?=Helper::humanDate($host->dateInsert)?></td>
 					</tr>
 				<?php } ?>
