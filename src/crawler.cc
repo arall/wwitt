@@ -38,7 +38,7 @@
 #define MAX_OUTSTANDING_QUERIES (1024*256)
 struct connection_query {
 	int socket;
-	unsigned int ip;
+	unsigned long ip;
 	unsigned short port;
 	unsigned char status; // 0 unused, 1 connecting, 2 sending/receiving data
 	unsigned char retries;
@@ -514,14 +514,10 @@ void * dns_dispatcher(void * args) {
 			struct addrinfo *result;
 			std::string tosolve = gethostname(cquery->usrdata_ext);
 			if (getaddrinfo(tosolve.c_str(), NULL, NULL, &result) == 0) {
-				char hostname[2048];
-				if (getnameinfo(result->ai_addr, result->ai_addrlen, hostname, 2047, NULL, 0, 0) == 0) {
-					struct in_addr ipa;
-					inet_aton(hostname, &ipa);
-					cquery->ip = ntohl(ipa.s_addr);
-					cquery->start_time = time(0);
-					std::cout << "Resolved " << tosolve << " to " << hostname << std::endl;
-				}
+				unsigned long ip = ntohl(((struct sockaddr_in*)result->ai_addr)->sin_addr.s_addr);
+				cquery->ip = ntohl(ip);
+				cquery->start_time = time(0);
+				std::cout << "Resolved " << tosolve << " to " << ip << std::endl;
 			}
 		}
 		else

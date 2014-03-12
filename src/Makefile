@@ -1,7 +1,10 @@
 
 
-all:	vhost crawler scan
+all:	vhost crawler scan dispatcher_daemon
 
+
+dispatcher_daemon:
+	g++ -o dispatcher_daemon dispatcher_daemon.cc -O0 -ggdb -lpthread
 
 scan:
 	gcc -o scan scan.c -lpcap  -lpthread -O2 `mysql_config --include` `mysql_config --libs`
@@ -15,5 +18,5 @@ vhost:
 	g++ -o vhost vhost.o captcha.o  -ltesseract -llept -lpthread -lcurl -ggdb `mysql_config --include` `mysql_config --libs ` -lpcre
 
 clean:
-	rm -rf scan crawler vhost *.o
+	rm -rf scan crawler vhost dispatcher_daemon *.o
 
