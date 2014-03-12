@@ -4,21 +4,18 @@ class Host extends Model {
 	public $ip;
 	public $ipAdress;
 	public $status;
-	public $hostname;
-	public $os;
 	public $dateInsert;
 	public $dateUpdate;
 	
 	public $totalServices;
-	public $totalVirtualhosts;
 
 	public $statusesCss = array(
 		0 => "danger",
 		1 => "success",
 	);
 	public $statuses = array(
-		0 => "Not explited",
-		1 => "Exploited",
+		0 => "Not scanned",
+		1 => "Scanned",
 	);
 	public static $reservedVarsChild = array("statusesCss", "statuses");
 
@@ -37,31 +34,11 @@ class Host extends Model {
 	}
 
 	public function getServices(){
-		$db = Registry::getDb();
-		$query = "SELECT * FROM services WHERE ip=".(int)$this->ip;
-		if($db->Query($query)){
-			if($db->getNumRows()){
-				$rows = $db->loadArrayList();
-				foreach($rows as $row){
-					$result[] = new Service($row);
-				}
-				return $result;
-			}
-		}	
-	}
-
-	public function getVirtualHosts(){
-		$db = Registry::getDb();
-		$query = "SELECT * FROM virtualhosts WHERE ip=".(int)$this->ip;
-		if($db->Query($query)){
-			if($db->getNumRows()){
-				$rows = $db->loadArrayList();
-				foreach($rows as $row){
-					$result[] = new VirtualHost($row);
-				}
-				return $result;
-			}
-		}
+		return Service::select(
+			array(
+				"ip" => $this->ip
+			)
+		);	
 	}
 	
 	public function select($data=array(), $limit=0, $limitStart=0, &$total=null){

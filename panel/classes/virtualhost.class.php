@@ -1,18 +1,36 @@
 <?php
 class VirtualHost extends Model {
 	
-	public $ip;
 	public $host;
+	public $status;
 	public $url;
 	public $head;
 	public $index;
 	public $robots;
 	public $dateInsert;
 	
+	public $statusesCss = array(
+		0 => "danger",
+		1 => "success",
+	);
+	public $statuses = array(
+		0 => "Not crawled",
+		1 => "Crawled",
+	);
+	public static $reservedVarsChild = array("statusesCss", "statuses");
+
 	public function init(){
-		parent::$idField = "ip";
+		parent::$idField = "host";
 		parent::$dbTable = "virtuahosts";
 		parent::$reservedVarsChild = self::$reservedVarsChild;
+	}
+
+	public function getStatusString(){
+		return $this->statuses[$this->status];
+	}
+
+	public function getStatusCssString(){
+		return $this->statusesCss[$this->status];
 	}
 	
 	public function select($data=array(), $limit=0, $limitStart=0, &$total=null){

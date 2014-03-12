@@ -19,11 +19,11 @@ class Vuln extends Model {
 		//Search for exploit module
 		if(file_exists("classes/exploitModules/".$this->module.".php")){
 			include("classes/exploitModules/".$this->module.".php");
-			$module = new $this->exploitModule($this, $host, $port, $virtualHost);
+			$module = new $this->module($this, $host, $port, $virtualHost);
 			if($module->preRun()){
 				echoCli("Executing ".$this->name." exploit against ".$host->ipAdress.":".$port, "title");
 				$res = $module->run();
-				if(!CLI_DEBUG){
+				if(!defined('CLI_DEBUG')){
 					$module->save();
 				}
 				return $res;
@@ -34,19 +34,35 @@ class Vuln extends Model {
 		return false;
 	}
 
-	public function select($data=array()){
+	public function select($data=array(), $limit=0, $limitStart=0, &$total=null){
 		$db = Registry::getDb();
-		$query = "SELECT * FROM vulns WHERE 1=1 ";
-		if($data["protocol"]){
-			$query .= "AND protocol=".(int)$data["protocol"];
-		}
+        //Query
+		$query = "SELECT * FROM `vulns` WHERE 1=1 ";
+		//Total
 		if($db->Query($query)){
-			if($db->getNumRows()){
-				$rows = $db->loadArrayList();
-				foreach($rows as $row){
-					$result[] = new Vuln($row);
+			$total = $db->getNumRows();
+			//Order
+			if($data['order'] && $data['orderDir']){
+				//Secure Field
+				$orders = array("ASC", "DESC");
+				if(@in_array($data['order'], array_keys(get_class_vars(__CLASS__))) && in_array($data['orderDir'], $orders)){
+					$query .= " ORDER BY `".mysql_real_escape_string($data['order'])."` ".mysql_real_escape_string($data['orderDir']);
 				}
-				return $result;
+			}
+			//Limit
+			if($limit){
+				$query .= " LIMIT ".(int)$limitStart.", ".(int)$limit;
+			}
+			if($total){
+				if($db->Query($query)){
+					if($db->getNumRows()){
+						$rows = $db->loadArrayList();
+						foreach($rows as $row){
+							$results[] = new Vuln($row);
+						}
+						return $results;
+					}
+				}
 			}
 		}
 	}

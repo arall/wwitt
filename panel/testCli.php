@@ -8,23 +8,24 @@ define("CLI_DEBUG", true); //Dont save the results
 
 include("index.php");
 
+if(!$argv[1] || !$argv[2]){
+	die(echoCli("Example: php testCli.php httpWeakLogin 192.168.1.1", "failure"));
+}
+
 //Define
-$vulnId = 3;
+$vuln = new Vuln($argv[1]);
 
 //Creating Models
 $host = new Host();
-$host->ipAdress = $argv[1];
+$host->ipAdress = $argv[2];
 if(!$host->ipAdress){
-	echoCli("Host not found", "failure");
-	exit;
+	die(echoCli("Host not found", "failure"));
 }
 $virtualhost = null;
 
 //Launch vuln exploit
-$vuln = new Vuln($vulnId);
-if(!$vuln->id){
-	echoCli("Vuln not found", "failure");
-	exit;
+if(!$vuln->module){
+	die(echoCli("Vuln not found", "failure"));
 }
 $res = $vuln->exploit($host, $vuln->port, $virtualhost);
 
