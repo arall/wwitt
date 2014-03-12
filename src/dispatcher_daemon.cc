@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 #endif
 
+#include <curl/curl.h>
 #include <string>
 #include <iostream>
 #include <poll.h>
@@ -36,14 +37,23 @@
 
 #define READBUF_CHUNK 4096
 
-#define MAX_TIMEOUT 10   // In seconds
-#define MAX_RETRIES 10
-#define MAX_REDIRS  10
+#define MAX_TIMEOUT     10   // In seconds
+#define MAX_DNS_TIMEOUT 10   // In seconds
+#define MAX_RETRIES     10
+#define MAX_REDIRS      10
 
 #define MAX_OUTSTANDING_QUERIES (1024*64)
 
+std::string output_stream;
+
 // Each worker (DNS or HTTP) is responsible for killing jobs, this is, it is the only writer (to avoid mutexes)
-enum RequestsStatus { reqEmpty, reqDnsQuery, reqDnsQuerying, reqConnecting, reqTransfer, reqComplete, reqCompleteError, reqError };
+enum RequestsStatus {
+	reqEmpty,
+	reqDnsQuery, reqDnsQuerying, 
+	reqConnecting, reqTransfer, 
+	reqCurl, reqCurlTransfer,
+	reqComplete, reqCompleteError, reqError
+};
 
 struct connection_query {
 	RequestsStatus status;
@@ -77,10 +87,11 @@ void clear_query(connection_query * c) {
 }
 
 #define CONNECT_ERR(ret) (ret < 0 && errno != EINPROGRESS && errno != EALREADY && errno != EISCONN)
-#define CONNECT_OK(ret) (ret >= 0 || (ret < 0 && errno == EISCONN))
+#define CONNECT_OK(ret) (ret >= 0 || (ret < 0 && (errno == EISCONN || errno == EALREADY)))
 #define IOTRY_AGAIN(ret) (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
 
 void * dns_dispatcher(void * args);
+void * curl_dispatcher(void * args);
 volatile int adder_finish = 0;
 
 int setNonblocking(int fd) {
@@ -125,40 +136,45 @@ std::string gethostname(const std::string & url) {
 	else
 		return r.substr(0,p);
 }
+std::string getpathname(const std::string & url) {
+	std::string r = base_url(url);
+	if (r.substr(0,7) == "http://")  r = r.substr(7);
+	if (r.substr(0,8) == "https://") r = r.substr(8);
+	
+	size_t p = r.find("/");
+	if (p == std::string::npos)
+		return "/";
+	else
+		return r.substr(p);
+}
 
-
-char* parse_response(char * buffer, int size, const char * domain) {
+std::string parse_response(char * buffer, int size, const std::string current_url) {
 	// Look for redirects only in the header
 	buffer[size] = 0;
 	char * limit = strstr(buffer,"\r\n\r\n");
 	char * location = strcasestr(buffer,"Location:");
 
-	if (limit == 0 || location == 0) return 0;
-	if ((uintptr_t)location > (uintptr_t)limit) return 0;
+	if (limit == 0 || location == 0) return "";
+	if ((uintptr_t)location > (uintptr_t)limit) return "";
 
 	// We found a Location in the headers!
 	location += 9;
 	while (*location == ' ') location++;
 
 	int i;
-	char temp[4096] = {0};
-	for (i = 0; i < 4096 && *location != '\r'; i++)
-		temp[i] = *location++;
+	std::string temploc;
+	while (*location != '\r' && *location != ' ' && (uintptr_t)location < (uintptr_t)limit)
+		temploc += *location++;
 
 	// Append a proper header in case it's just a relative URL
-	char * ret = (char*)calloc(4096,1);
-	if (memcmp(temp,"http:",5) == 0 || memcmp(temp,"https:",6) == 0) {
-		sprintf(ret,"%s",&temp[7]);
-		for (i = 0; i < strlen(ret); i++)
-			if (ret[i] == '/')
-				ret[i] = 0;
+	if (temploc.substr(0,7) == "http://" || temploc.substr(0,8) == "https://") {
+		return temploc;
 	}
 	else {
-		// Get the Base URL
-		sprintf(ret,"%s\0%s",domain,temp);
+		return base_url(current_url) + temploc;
 	}
-	return ret;
 }
+
 
 int main(int argc, char **argv) {
 	printf(
@@ -187,12 +203,15 @@ int main(int argc, char **argv) {
 	
 	// Open server PIPE
 	int inpipefd  = open(argv[1], O_NONBLOCK | O_RDONLY);
+	if (inpipefd < 0) { perror("Could not open IN pipe: "); exit(1); }
 	int outpipefd = open(argv[2], O_NONBLOCK | O_WRONLY);
+	if (outpipefd < 0) { perror("Could not open OUT pipe: "); exit(1); }
 	
 	signal(SIGPIPE, SIG_IGN);
 	
 	int max_inflight = 100;
 	int dns_workers = 20;
+	int curl_workers = 20;
 	int bannercrawl = (strcmp("banner",argv[1]) == 0);
 	
 	// Initialize structures
@@ -202,7 +221,10 @@ int main(int argc, char **argv) {
 	// Start!
 	pthread_t dns_worker_thread[dns_workers];
 	for (int i = 0; i < dns_workers; i++)
-		pthread_create (&dns_worker_thread[i], NULL, &dns_dispatcher, NULL);
+		pthread_create (&dns_worker_thread[i], NULL, &dns_dispatcher, (void*)i);
+	pthread_t curl_worker_thread[curl_workers];
+	for (int i = 0; i < curl_workers; i++)
+		pthread_create (&curl_worker_thread[i], NULL, &curl_dispatcher, (void*)i);
 
 	std::string request_buffer;
 
@@ -215,10 +237,11 @@ int main(int argc, char **argv) {
 			if (request_buffer.size() < 64*1024) { // Do not query more stuff if we have some already
 				char tempb[16*1024];
 				int r = read(inpipefd, tempb, sizeof(tempb)-1);
-				if (r > 0)
+				if (r >= 0)
 					request_buffer += std::string(tempb, r);
 				else if (!IOTRY_AGAIN(r)) {
 					fprintf(stderr, "Could not read from request pipe, shutting down\n");
+					perror("Error:");
 					exit(1);
 				}
 			}
@@ -226,17 +249,36 @@ int main(int argc, char **argv) {
 			size_t p = request_buffer.find("\n");
 			while (p != std::string::npos) {
 				std::string url = request_buffer.substr(0,p);
+				std::cerr << "Scheduling " << url << std::endl;
 				
 				for (int i = 0; i < MAX_OUTSTANDING_QUERIES; i++) {
 					struct connection_query * cquery = &connection_table[i];
 					if (cquery->status == reqEmpty) {
 						cquery->url = url;
-						cquery->status = reqDnsQuery;
+						
+						// Select between HTTP/HTTPS
+						if (url.substr(0,7) == "http://")
+							cquery->status = reqDnsQuery;
+						else
+							cquery->status = reqCurl;
 						break;
 					}
 				}
 				
 				request_buffer = request_buffer.substr(p+1);
+				p = request_buffer.find("\n");
+			}
+		}
+		
+		// Try to output some data to the output pipe
+		if (output_stream.size() > 0) {
+			int w = write(outpipefd, output_stream.c_str(), output_stream.size());
+			if (w >= 0)
+				output_stream = output_stream.substr(w);
+			else if (!IOTRY_AGAIN(w)) {
+				fprintf(stderr, "Could not write to output request pipe, shutting down\n");
+				perror("Error:");
+				exit(1);
 			}
 		}
 		
@@ -245,6 +287,18 @@ int main(int argc, char **argv) {
 		struct connection_query * cq;
 		for (cq = &connection_table[0]; cq != &connection_table[MAX_OUTSTANDING_QUERIES]; cq++) {
 			if (cq->status == reqConnecting) {
+				if (!cq->socket) {
+					cq->socket = socket(AF_INET, SOCK_STREAM, 0);
+					setNonblocking(cq->socket);
+					cq->inbuffer = (char*)malloc(READBUF_CHUNK+32);
+					std::string path = getpathname(cq->url);
+					std::string host = gethostname(cq->url);
+
+					cq->outbuffer = strdup(generateHTTPQuery(host, path).c_str());
+					cq->tosend_max = strlen(cq->outbuffer);
+					std::cerr << "Connecting " << cq->ip << std::endl;
+				}
+
 				struct sockaddr_in sin;
 				sin.sin_port = htons(cq->port);
 				sin.sin_addr.s_addr = htonl(cq->ip);
@@ -253,9 +307,11 @@ int main(int argc, char **argv) {
 				int res = connect(cq->socket,(struct sockaddr *)&sin,sizeof(sin));
 				if (CONNECT_ERR(res)) {
 					// Drop connection!
+					std::cerr << "Connection dropped " << cq->ip << " error " << errno << std::endl;
 					cq->status = reqError;
 				}
 				else if (CONNECT_OK(res)) {
+					std::cerr << "Connected " << cq->ip << std::endl;
 					cq->status = reqTransfer;
 				}
 			}
@@ -269,6 +325,8 @@ int main(int argc, char **argv) {
 					else if (!IOTRY_AGAIN(sent)) {
 						cq->status = reqError;
 					}
+					if (cq->tosend_offset == cq->tosend_max)
+						std::cerr << "Request send " << cq->ip << std::endl;
 				}
 			
 				// Try to receive data
@@ -283,8 +341,10 @@ int main(int argc, char **argv) {
 					// End of data. OK if we sent all the data only
 					if (cq->tosend_offset < cq->tosend_max) 
 						cq->status = reqError; // Disconnect, but ERR!
-					else
+					else {
 						cq->status = reqComplete; // Disconnect, OK!
+						std::cerr << "Complete! " << cq->ip << std::endl;
+					}
 				}
 				else if (!IOTRY_AGAIN(rec)) {
 					// Connection error!
@@ -294,17 +354,35 @@ int main(int argc, char **argv) {
 			
 			if (cq->status == reqError) {
 				if (cq->retries++ < MAX_RETRIES) {
-					cq->status = reqDnsQuery;
 					cq->tosend_offset = 0;
 					cq->received = 0;
 					cq->start_time = time(0);
+					
+					cq->status = (cq->url.substr(0,7) == "http://") ? reqDnsQuery : reqCurl;
 				}
 				else {
 					// We are done with this guy, mark is as false ready
-					clear_query(cq);
-					cq->received = 0;
 					cq->status = reqCompleteError;
 				}
+			}
+			if (cq->status == reqComplete) {
+				// Look for redirects :)
+				std::string newurl = parse_response((char*)cq->inbuffer, cq->received, cq->url);
+				
+				if (newurl == "") {
+					output_stream += std::string (cq->inbuffer, cq->received);
+					clear_query(cq);
+				}else{
+					std::cerr << "Redirect to " << newurl << std::endl;
+					clear_query(cq);
+					cq->url = newurl;
+					
+					cq->status = (cq->url.substr(0,7) == "http://") ? reqDnsQuery : reqCurl;
+				}
+				
+			}
+			if (cq->status == reqCompleteError) {
+				clear_query(cq);
 			}
 			if (cq->status == reqConnecting || cq->status == reqTransfer) {
 				if (time(0) - cq->start_time > MAX_TIMEOUT)
@@ -332,6 +410,8 @@ int main(int argc, char **argv) {
 	
 	for (int i = 0; i < dns_workers; i++)
 		pthread_join (dns_worker_thread[i], NULL);
+	for (int i = 0; i < curl_workers; i++)
+		pthread_join (curl_worker_thread[i], NULL);
 }
 
 void separate_body(char * buffer, int size, char ** buf1, char ** buf2, int * len1, int * len2) {
@@ -409,38 +489,40 @@ void dechunk_http(char * buffer, int * size) {
 	free(newbuffer);
 }
 
+
+// DNS worker thread
 void * dns_dispatcher(void * args) {
+	int num_thread = (int)args;
 	while (!adder_finish) {
 		// Look for successful or failed transactions
 		int found = 0;
-		for (int i = 0; i < MAX_OUTSTANDING_QUERIES; i++) {
+		for (int i = num_thread; i < MAX_OUTSTANDING_QUERIES; i += num_thread) {
 			struct connection_query * cquery = &connection_table[i];
-			if (time(0) - cquery->start_time > MAX_TIMEOUT) {
-					cquery->status = reqError;
-			}
 			
 			if (cquery->status == reqDnsQuery) {
-				
-				cquery->status = reqDnsQuerying;
-				
-				std::string host = gethostname(cquery->url);
-				
-				// DNS solve ...
-				struct addrinfo *result;
-				if (getaddrinfo(host.c_str(), NULL, NULL, &result) == 0) {
-					char hostname[2048];
-					if (getnameinfo(result->ai_addr, result->ai_addrlen, hostname, 2047, NULL, 0, 0) == 0) {
-						struct in_addr ipa;
-						inet_aton(hostname, &ipa);
-						cquery->ip = ntohl(ipa.s_addr);
-						cquery->start_time = time(0);
-						std::cerr << "Resolved " << host << " to " << hostname << std::endl;
-					}
+			
+				if (time(0) - cquery->start_time > MAX_DNS_TIMEOUT) {
+					cquery->status = reqError;
 				}
-
-				// cquery->ip = ...
+				else {
+					cquery->status = reqDnsQuerying;
 				
-				found = 1;
+					std::string host = gethostname(cquery->url);
+				
+					// DNS solve ...
+					struct addrinfo *result;
+					if (getaddrinfo(host.c_str(), NULL, NULL, &result) == 0) {
+						unsigned long ip = ntohl(((struct sockaddr_in*)result->ai_addr)->sin_addr.s_addr);
+						cquery->ip = ip;
+						cquery->port = 80;
+						cquery->start_time = time(0);
+						std::cerr << "Resolved " << host << " to " << ip << std::endl;
+					}
+
+					cquery->status = reqConnecting;
+				
+					found = 1;
+				}
 			}
 		}
 		if (!found)
@@ -450,4 +532,69 @@ void * dns_dispatcher(void * args) {
 	printf("DNS daemon quitting!\n");
 }
 
+// CURL worker thread
+struct http_query {
+	char * buffer;
+	int received;
+};
+static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream);
+
+void * curl_dispatcher(void * args) {
+	int num_thread = (int)args;
+	while (!adder_finish) {
+		// Look for successful or failed transactions
+		int found = 0;
+		for (int i = num_thread; i < MAX_OUTSTANDING_QUERIES; i += num_thread) {
+			struct connection_query * cquery = &connection_table[i];
+			
+			if (cquery->status == reqCurl) {
+				cquery->status == reqCurlTransfer;
+
+				struct http_query hq;
+				memset(&hq,0,sizeof(hq));
+				hq.buffer = (char*)malloc(32);
+
+				CURL * curl = curl_easy_init();
+				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
+				curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+				curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_fwrite);
+				curl_easy_setopt(curl, CURLOPT_WRITEDATA, &hq);
+				curl_easy_setopt(curl, CURLOPT_URL, cquery->url.c_str());
+
+				std::cerr << "cURL Fetch " << cquery->url << std::endl;
+				CURLcode res = curl_easy_perform(curl);
+				
+				// Move data
+				cquery->inbuffer = hq.buffer;
+				cquery->received = hq.received;
+
+				if(CURLE_OK == res)
+					cquery->status = reqComplete;
+				else
+					cquery->status = reqError;
+
+				curl_easy_cleanup(curl);
+			}
+		}
+	}
+	
+	std::cerr << "Closing cURL thread" << std::endl;
+}
+
+
+static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream) {
+	struct http_query * q = (struct http_query *)stream;
+
+	q->buffer = (char*)realloc(q->buffer, size*nmemb + q->received + 32);
+	char *bb = q->buffer;
+
+	memcpy(&bb[q->received], buffer, size*nmemb);
+	q->received += size*nmemb;
+
+	//if (q->received > MAX_BUFFER_SIZE)
+	//	return -1;  // Ops!
+
+	return size*nmemb;
+}
 

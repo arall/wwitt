@@ -65,7 +65,7 @@ void * query_adder(void * args);
 void mysql_initialize();
 
 #define CONNECT_ERR(ret) (ret < 0 && errno != EINPROGRESS && errno != EALREADY && errno != EISCONN)
-#define CONNECT_OK(ret) (ret >= 0 || (ret < 0 && errno == EISCONN))
+#define CONNECT_OK(ret) (ret >= 0 || (ret < 0 && (errno == EISCONN || errno == EALREADY)))
 #define IOTRY_AGAIN(ret) (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
 
 int sockfd;
@@ -515,7 +515,7 @@ void * dns_dispatcher(void * args) {
 			std::string tosolve = gethostname(cquery->usrdata_ext);
 			if (getaddrinfo(tosolve.c_str(), NULL, NULL, &result) == 0) {
 				unsigned long ip = ntohl(((struct sockaddr_in*)result->ai_addr)->sin_addr.s_addr);
-				cquery->ip = ntohl(ip);
+				cquery->ip = ip;
 				cquery->start_time = time(0);
 				std::cout << "Resolved " << tosolve << " to " << ip << std::endl;
 			}

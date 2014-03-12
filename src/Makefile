@@ -4,7 +4,7 @@ all:	vhost crawler scan dispatcher_daemon
 
 
 dispatcher_daemon:
-	g++ -o dispatcher_daemon dispatcher_daemon.cc -O0 -ggdb -lpthread
+	g++ -o dispatcher_daemon dispatcher_daemon.cc -O0 -ggdb -lpthread -lcurl
 
 scan:
 	gcc -o scan scan.c -lpcap  -lpthread -O2 `mysql_config --include` `mysql_config --libs`
