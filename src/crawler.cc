@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 #endif
 
+#include <curl/curl.h>
 #include <iostream>
 #include <poll.h>
 #include <fcntl.h>
@@ -35,22 +36,29 @@
 #define MAX_RETRIES 10
 #define MAX_REDIRS  10
 
+enum RequestsStatus {
+	reqEmpty,
+	reqDnsQuery, reqDnsQuerying, 
+	reqConnecting, reqTransfer, 
+	reqCurl, reqCurlTransfer,
+	reqComplete, reqCompleteError, reqError
+};
+
 #define MAX_OUTSTANDING_QUERIES (1024*256)
 struct connection_query {
 	int socket;
 	unsigned long ip;
 	unsigned short port;
-	unsigned char status; // 0 unused, 1 connecting, 2 sending/receiving data
+	RequestsStatus status;
 	unsigned char retries;
 	unsigned char redirs;
 	
-	std::string usrdata;
-	std::string usrdata_ext;
+	std::string vhost;
+	std::string url;
 	int tosend_max, tosend_offset;
 	int received;
 	char *inbuffer, *outbuffer;
 	unsigned long start_time;
-	unsigned char dns_status;
 } connection_table[MAX_OUTSTANDING_QUERIES];
 
 struct pollfd poll_desc[MAX_OUTSTANDING_QUERIES];
@@ -61,20 +69,18 @@ MYSQL *mysql_conn_update2 = 0;
 
 void * database_dispatcher(void * args);
 void * dns_dispatcher(void * args);
-void * query_adder(void * args);
+void * curl_dispatcher(void * args);
 void mysql_initialize();
 
 #define CONNECT_ERR(ret) (ret < 0 && errno != EINPROGRESS && errno != EALREADY && errno != EISCONN)
 #define CONNECT_OK(ret) (ret >= 0 || (ret < 0 && (errno == EISCONN || errno == EALREADY)))
 #define IOTRY_AGAIN(ret) (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
 
-int sockfd;
-struct in_addr current_ip;
-
-int maxpp;
-int total_ips, total_ports;
-int portlist[32];
 volatile int adder_finish = 0;
+
+int max_inflight = 100;
+int max_dns_inflight = 50;
+int curl_workers = 20;
 
 int setNonblocking(int fd) {
 	int flags;
@@ -168,12 +174,11 @@ std::string parse_response(char * buffer, int size, const std::string current_ur
 
 void clean_entry(struct connection_query * q) {
 	close(q->socket);
-	q->dns_status = 0;
-	q->usrdata = "";
-	q->usrdata_ext = "";
+	q->vhost = "";
+	q->url = "";
 	if (q->inbuffer) free(q->inbuffer);
 	if (q->outbuffer) free(q->outbuffer);
-	q->status = 0;
+	q->status = reqEmpty;
 }
 
 int main(int argc, char **argv) {
@@ -206,12 +211,12 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 	
-	int max_inflight = 100;
-	int max_dns_inflight = 50;
 	int bannercrawl = (strcmp("banner",argv[1]) == 0);
 	
 	// Initialize structures
-	memset(&connection_table, 0, sizeof(connection_table));
+	//memset(&connection_table, 0, sizeof(connection_table));
+	for (int i = 0; i < sizeof(connection_table)/sizeof(connection_table[0]); i++)
+		clean_entry(&connection_table[i]);
 	
 	signal(SIGPIPE, SIG_IGN);
 	mysql_initialize();
@@ -224,10 +229,8 @@ int main(int argc, char **argv) {
 	pthread_create (&db, NULL, &database_dispatcher, &bannercrawl);
 
 	pthread_t dns_workers[max_dns_inflight];
-	pthread_mutex_t dns_mutex;
-	pthread_mutex_init(&dns_mutex, NULL);
 	for (int i = 0; i < max_dns_inflight; i++)
-		pthread_create (&dns_workers[i], NULL, &dns_dispatcher, &dns_mutex);
+		pthread_create (&dns_workers[i], NULL, &dns_dispatcher, (void*)i);
 
 	int num_active = 0;	
 	// Infinite loop: query IP/Domain blocks
@@ -250,15 +253,14 @@ int main(int argc, char **argv) {
 			while ((row = mysql_fetch_row(result)) && injected++ < max_inflight) {
 				struct connection_query cquery;
 				cquery.ip = 0;
-				cquery.status = 1;
 				cquery.retries = cquery.redirs = 0;
 				cquery.tosend_max = cquery.tosend_offset = 0;
 				cquery.received = 0;
 				cquery.inbuffer = (char*)malloc(READBUF_CHUNK+32);
 				memset(cquery.inbuffer,0,READBUF_CHUNK+32);
 				cquery.outbuffer = 0;
-				cquery.usrdata = "";
-				cquery.usrdata_ext = "";
+				cquery.vhost = "";
+				cquery.url = "";
 				cquery.socket = socket(AF_INET, SOCK_STREAM, 0);
 				cquery.start_time = time(0);
 				setNonblocking(cquery.socket);
@@ -266,22 +268,23 @@ int main(int argc, char **argv) {
 				if (bannercrawl) {
 					cquery.ip = atoi(row[0]);
 					cquery.port = atoi(row[1]);
+					cquery.status = reqConnecting;
 				}else{
 					std::string vhost = std::string(row[0]);
 					cquery.outbuffer = strdup(generateHTTPQuery(vhost,"/").c_str());
 					cquery.tosend_max = strlen(cquery.outbuffer);
 					cquery.port = 80;
-					cquery.dns_status = 1; // Needs resolving :)
-					cquery.usrdata = vhost;
-					cquery.usrdata_ext = "http://" + vhost + "/";
-					std::cout << "Query " << cquery.usrdata_ext << std::endl;
+					cquery.status = reqDnsQuery;
+					cquery.vhost = vhost;
+					cquery.url = "http://" + vhost + "/";
+					std::cout << "Query " << cquery.url << std::endl;
 				}
 			
 				// Look for an empty entry
 				int i;
 				for (i = 0; i < MAX_OUTSTANDING_QUERIES; i++) {
-					if (connection_table[i].status == 0) {
-						memcpy(&connection_table[i], &cquery, sizeof(cquery));
+					if (connection_table[i].status == reqEmpty) {
+						connection_table[i] = cquery;
 						break;
 					}
 				}
@@ -299,7 +302,7 @@ int main(int argc, char **argv) {
 		num_active = 0;
 		struct connection_query * cq;
 		for (cq = &connection_table[0]; cq != &connection_table[MAX_OUTSTANDING_QUERIES]; cq++) {
-			if (cq->status == 1 && cq->ip != 0) {
+			if (cq->status == reqConnecting) {
 				struct sockaddr_in sin;
 				sin.sin_port = htons(cq->port);
 				sin.sin_addr.s_addr = htonl(cq->ip);
@@ -308,13 +311,13 @@ int main(int argc, char **argv) {
 				int res = connect(cq->socket,(struct sockaddr *)&sin,sizeof(sin));
 				if (CONNECT_ERR(res)) {
 					// Drop connection!
-					cq->status = 99;
+					cq->status = reqError;
 				}
 				else if (CONNECT_OK(res)) {
-					cq->status = 2;
+					cq->status = reqTransfer;
 				}
 			}
-			if (cq->status == 2) {
+			if (cq->status == reqTransfer) {
 				// Try to send data (if any)
 				if (cq->tosend_offset < cq->tosend_max) {
 					int sent = write(cq->socket,&cq->outbuffer[cq->tosend_offset],cq->tosend_max-cq->tosend_offset);
@@ -322,7 +325,7 @@ int main(int argc, char **argv) {
 						cq->tosend_offset += sent;
 					}
 					else if (!IOTRY_AGAIN(sent)) {
-						cq->status = 99;
+						cq->status = reqError;
 					}
 				}
 			
@@ -337,19 +340,19 @@ int main(int argc, char **argv) {
 				else if (rec == 0) {
 					// End of data. OK if we sent all the data only
 					if (cq->tosend_offset < cq->tosend_max) 
-						cq->status = 99; // Disconnect, but ERR!
+						cq->status = reqError; // Disconnect, but ERR!
 					else
-						cq->status = 100; // Disconnect, OK!
+						cq->status = reqComplete; // Disconnect, OK!
 				}
 				else if (!IOTRY_AGAIN(rec)) {
 					// Connection error!
-					cq->status = 99;
+					cq->status = reqError;
 				}
 			}
 			
-			if (cq->status == 99) {
+			if (cq->status == reqError) {
 				if (cq->retries++ < MAX_RETRIES) {
-					cq->status = 1;
+					cq->status = reqDnsQuery;
 					cq->tosend_offset = 0;
 					cq->received = 0;
 					cq->start_time = time(0);
@@ -358,12 +361,12 @@ int main(int argc, char **argv) {
 					// We are done with this guy, mark is as false ready
 					//clean_entry(cq);
 					cq->received = 0;
-					cq->status = 101;
+					cq->status = reqCompleteError;
 				}
 			}
-			if (cq->status > 0 && cq->status < 32) {
+			if (cq->status == reqConnecting || cq->status == reqTransfer) {
 				if (time(0) - cq->start_time > MAX_TIMEOUT)
-					cq->status = 99;
+					cq->status = reqError;
 
 				int mask = POLLERR;
 				mask |= (cq->tosend_offset < cq->tosend_max) ? POLLOUT : 0;
@@ -494,30 +497,32 @@ void dechunk_http(char * buffer, int * size) {
 
 // Wait for DNS requests, process them one at a time and store the IP back
 void * dns_dispatcher(void * args) {
-	pthread_mutex_t * mmutex = (pthread_mutex_t*)args;
+	int offset = (int)args;
 
 	while (!adder_finish) {
-		pthread_mutex_lock(mmutex);
-
 		struct connection_query * cquery = NULL;
-		for (int i = 0; i < MAX_OUTSTANDING_QUERIES; i++) {
-			if (connection_table[i].status == 1 && connection_table[i].dns_status == 1) {
-				// Handle this DNS :D
+		for (int i = offset; i < MAX_OUTSTANDING_QUERIES; i += max_dns_inflight) {
+			if (connection_table[i].status == reqDnsQuery) {
+				if (time(0) - connection_table[i].start_time > MAX_TIMEOUT)
+					connection_table[i].status = reqError;
+			}
+
+			if (connection_table[i].status == reqDnsQuery) {
 				cquery = &connection_table[i];
-				cquery->dns_status = 2; // Resolving
+				cquery->status = reqDnsQuerying;
 				break;
 			}
 		}
-		pthread_mutex_unlock(mmutex);
 
 		if (cquery) {
 			struct addrinfo *result;
-			std::string tosolve = gethostname(cquery->usrdata_ext);
+			std::string tosolve = gethostname(cquery->url);
 			if (getaddrinfo(tosolve.c_str(), NULL, NULL, &result) == 0) {
 				unsigned long ip = ntohl(((struct sockaddr_in*)result->ai_addr)->sin_addr.s_addr);
 				cquery->ip = ip;
 				cquery->start_time = time(0);
-				std::cout << "Resolved " << tosolve << " to " << ip << std::endl;
+				std::cerr << "Resolved " << tosolve << " to " << ip << std::endl;
+				cquery->status = reqConnecting;
 			}
 		}
 		else
@@ -536,10 +541,10 @@ void * database_dispatcher(void * args) {
 		int i;
 		for (i = 0; i < MAX_OUTSTANDING_QUERIES; i++) {
 			struct connection_query * cquery = &connection_table[i];
-			if (cquery->status == 100 || cquery->status == 101) {
+			if (cquery->status == reqComplete || cquery->status == reqCompleteError) {
 				// Analyze the response, maybe we find some redirects
 				dechunk_http(cquery->inbuffer,&cquery->received);
-				std::string newloc = parse_response((char*)cquery->inbuffer, cquery->received, cquery->usrdata);
+				std::string newloc = parse_response((char*)cquery->inbuffer, cquery->received, cquery->url);
 				
 				if (newloc != "" && cquery->redirs < MAX_REDIRS) {
 					// Reuse the same entry for the request
@@ -561,10 +566,10 @@ void * database_dispatcher(void * args) {
 
 					cquery->outbuffer = strdup(generateHTTPQuery(host, path).c_str());
 					cquery->tosend_max = strlen(cquery->outbuffer);
-					cquery->usrdata_ext = newloc;
-					std::cout << "Query " << cquery->usrdata_ext << std::endl;
+					cquery->url = newloc;
+					std::cout << "Query " << cquery->url << std::endl;
 
-					cquery->status = 1;
+					cquery->status = (cquery->url.substr(0,7) == "http://") ? reqDnsQuery : reqDnsQuery; // FIXME
 				}
 				else{ 
 					if (bannercrawl) {
@@ -573,7 +578,7 @@ void * database_dispatcher(void * args) {
 						sprintf(sql_query, "UPDATE services SET `head`='%s',`status`=`status`&(~1) WHERE `ip`=%d AND `port`=%d\n",
 							tempb, cquery->ip, cquery->port);
 					}else{
-						int eflag = cquery->status == 101 ? 0x80 : 0;
+						int eflag = cquery->status == reqCompleteError ? 0x80 : 0;
 						char tempb [cquery->received*2+2];
 						char tempb_[cquery->received*2+2];
 						int len1, len2; char *p1, *p2;
@@ -582,8 +587,8 @@ void * database_dispatcher(void * args) {
 						mysql_real_escape_string(mysql_conn_update, tempb,  p1, len1);
 						mysql_real_escape_string(mysql_conn_update, tempb_, p2, len2);
 
-						std::string hostname = mysql_real_escape_std_string(mysql_conn_update,cquery->usrdata);
-						std::string url      = mysql_real_escape_std_string(mysql_conn_update,cquery->usrdata_ext);
+						std::string hostname = mysql_real_escape_std_string(mysql_conn_update,cquery->vhost);
+						std::string url      = mysql_real_escape_std_string(mysql_conn_update,cquery->url);
 
 						sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=(`status`&(~1))|%d WHERE `ip`=%d AND `host`=\"%s\";", tempb_, tempb, url.c_str(), eflag, cquery->ip, hostname.c_str());
 					}
@@ -607,6 +612,73 @@ void * database_dispatcher(void * args) {
 	printf("Inserted %llu registers\n", num_processed);
 
 	mysql_close(mysql_conn_update);
+}
+
+
+// CURL worker thread
+struct http_query {
+	char * buffer;
+	int received;
+};
+static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream);
+
+void * curl_dispatcher(void * args) {
+	int num_thread = (int)args;
+	while (!adder_finish) {
+		// Look for successful or failed transactions
+		int found = 0;
+		for (int i = num_thread; i < MAX_OUTSTANDING_QUERIES; i += curl_workers) {
+			struct connection_query * cquery = &connection_table[i];
+			
+			if (cquery->status == reqCurl) {
+				cquery->status == reqCurlTransfer;
+
+				struct http_query hq;
+				memset(&hq,0,sizeof(hq));
+				hq.buffer = (char*)malloc(32);
+
+				CURL * curl = curl_easy_init();
+				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
+				curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+				curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_fwrite);
+				curl_easy_setopt(curl, CURLOPT_WRITEDATA, &hq);
+				curl_easy_setopt(curl, CURLOPT_URL, cquery->url.c_str());
+
+				std::cerr << "cURL Fetch " << cquery->url << std::endl;
+				CURLcode res = curl_easy_perform(curl);
+				
+				// Move data
+				cquery->inbuffer = hq.buffer;
+				cquery->received = hq.received;
+
+				if(CURLE_OK == res)
+					cquery->status = reqComplete;
+				else
+					cquery->status = reqError;
+
+				curl_easy_cleanup(curl);
+			}
+		}
+	}
+	
+	std::cerr << "Closing cURL thread" << std::endl;
+}
+
+
+static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream) {
+	struct http_query * q = (struct http_query *)stream;
+
+	q->buffer = (char*)realloc(q->buffer, size*nmemb + q->received + 32);
+	char *bb = q->buffer;
+
+	memcpy(&bb[q->received], buffer, size*nmemb);
+	q->received += size*nmemb;
+
+	//if (q->received > MAX_BUFFER_SIZE)
+	//	return -1;  // Ops!
+
+	return size*nmemb;
 }
 
 

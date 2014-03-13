@@ -24,6 +24,7 @@
 
 // Requests have the format:
 // URL\n
+// User-Agent\n  (Empty User-Agent uses the default one)
 // Responses are in the form:
 // URL\n
 // response size (head+body) in ASCII form \n
@@ -43,6 +44,11 @@
 #define MAX_REDIRS      10
 
 #define MAX_OUTSTANDING_QUERIES (1024*64)
+
+int max_inflight = 100;
+int dns_workers = 20;
+int curl_workers = 20;
+
 
 std::string output_stream;
 
@@ -92,6 +98,7 @@ void clear_query(connection_query * c) {
 
 void * dns_dispatcher(void * args);
 void * curl_dispatcher(void * args);
+void dechunk_http(char * buffer, int * size);
 volatile int adder_finish = 0;
 
 int setNonblocking(int fd) {
@@ -148,6 +155,12 @@ std::string getpathname(const std::string & url) {
 		return r.substr(p);
 }
 
+std::string int_to_str (int a) {
+	char temp[256];
+	sprintf(temp,"%d",a);
+	return std::string(temp);
+}
+
 std::string parse_response(char * buffer, int size, const std::string current_url) {
 	// Look for redirects only in the header
 	buffer[size] = 0;
@@ -187,7 +200,7 @@ int main(int argc, char **argv) {
 "     '\\/__//__/  '\\/__//__/  \\/_____/  \\/_/    \\/_/ \n"
 "                                                    \n"
 "         World Wide Internet Takeover Tool          \n"
-"              HTTP dispatcher daemon                  \n"  );
+"           HTTP/HTTPS dispatcher daemon                  \n"  );
 
 	
 	if ( argc < 3 ) {
@@ -205,13 +218,9 @@ int main(int argc, char **argv) {
 	int inpipefd  = open(argv[1], O_NONBLOCK | O_RDONLY);
 	if (inpipefd < 0) { perror("Could not open IN pipe: "); exit(1); }
 	int outpipefd = open(argv[2], O_NONBLOCK | O_WRONLY);
-	if (outpipefd < 0) { perror("Could not open OUT pipe: "); exit(1); }
 	
 	signal(SIGPIPE, SIG_IGN);
 	
-	int max_inflight = 100;
-	int dns_workers = 20;
-	int curl_workers = 20;
 	int bannercrawl = (strcmp("banner",argv[1]) == 0);
 	
 	// Initialize structures
@@ -271,14 +280,20 @@ int main(int argc, char **argv) {
 		}
 		
 		// Try to output some data to the output pipe
+		if (outpipefd < 0) {
+			// Try to open it...
+			outpipefd = open(argv[2], O_NONBLOCK | O_WRONLY);
+			if (outpipefd < 0)
+				output_stream = ""; // Discard data until we have the descriptoo wide open
+		}
+		
 		if (output_stream.size() > 0) {
 			int w = write(outpipefd, output_stream.c_str(), output_stream.size());
 			if (w >= 0)
 				output_stream = output_stream.substr(w);
 			else if (!IOTRY_AGAIN(w)) {
-				fprintf(stderr, "Could not write to output request pipe, shutting down\n");
-				perror("Error:");
-				exit(1);
+				fprintf(stderr, "Could not write to output request pipe, this will discard data so on\n");
+				outpipefd = -1;
 			}
 		}
 		
@@ -367,9 +382,12 @@ int main(int argc, char **argv) {
 			}
 			if (cq->status == reqComplete) {
 				// Look for redirects :)
+				dechunk_http ((char*)cq->inbuffer, &cq->received);
 				std::string newurl = parse_response((char*)cq->inbuffer, cq->received, cq->url);
 				
 				if (newurl == "") {
+					output_stream += cq->url + "\n";
+					output_stream += int_to_str(cq->received) + "\n";
 					output_stream += std::string (cq->inbuffer, cq->received);
 					clear_query(cq);
 				}else{
@@ -496,7 +514,7 @@ void * dns_dispatcher(void * args) {
 	while (!adder_finish) {
 		// Look for successful or failed transactions
 		int found = 0;
-		for (int i = num_thread; i < MAX_OUTSTANDING_QUERIES; i += num_thread) {
+		for (int i = num_thread; i < MAX_OUTSTANDING_QUERIES; i += dns_workers) {
 			struct connection_query * cquery = &connection_table[i];
 			
 			if (cquery->status == reqDnsQuery) {
@@ -544,7 +562,7 @@ void * curl_dispatcher(void * args) {
 	while (!adder_finish) {
 		// Look for successful or failed transactions
 		int found = 0;
-		for (int i = num_thread; i < MAX_OUTSTANDING_QUERIES; i += num_thread) {
+		for (int i = num_thread; i < MAX_OUTSTANDING_QUERIES; i += curl_workers) {
 			struct connection_query * cquery = &connection_table[i];
 			
 			if (cquery->status == reqCurl) {
