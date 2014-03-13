@@ -29,8 +29,6 @@ class hostsController extends Controller {
 		$host = new Host($url->vars[0]);
 		if($host->ip){
 			$services = $host->getServices();
-			$virtualHosts = $host->getVirtualHosts();
-			$this->setData("virtualHosts", $virtualHosts);
 			$this->setData("services", $services);
 			$this->setData("host", $host);
 			$html .= $this->view("views.view");
@@ -43,12 +41,12 @@ class hostsController extends Controller {
 	public function exploit(){
 		$host = new Host($_REQUEST['ip']);
 		if($host->ip){
-			$vuln = new Vuln($_REQUEST['vulnId']);
-			if($vuln->id){
+			$vuln = new Vuln($_REQUEST['vuln']);
+			if($vuln->module){
 				$virtualHost = null;
 				$port = $_REQUEST['port'];
-				if($_REQUEST['virtualHostId']){
-					$virtualHost = new virtualHost($_REQUEST['virtualHostId']);
+				if($_REQUEST['host']){
+					$virtualHost = new virtualHost($_REQUEST['host']);
 				}
 				$res = $vuln->exploit($host, $port, $virtualHost);
 				if($res){

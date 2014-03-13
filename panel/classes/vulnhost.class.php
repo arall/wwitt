@@ -1,44 +1,46 @@
 <?php
-class Service extends Model {
+class VulnHost extends Model {
 	
 	public $id;
 	public $ip;
+	public $host;
+	public $vuln;
 	public $port;
-	public $filtered;
-	public $head;
-	public $protocol;
-	public $product;
-	public $version;
+	public $status;
+	public $data;
 	public $dateInsert;
+	public $dateUpdate;
 
-	public $statusesCss = array(
-		0 => "success",
-		1 => "danger",
-	);
-	public $statuses = array(
-		0 => "Open",
-		1 => "Filtered",
-	);
-	public static $reservedVarsChild = array("statuses", "statusesCss");
-	
 	public function init(){
 		parent::$idField = "id";
-		parent::$dbTable = "services";
+		parent::$dbTable = "vulns_hosts";
 		parent::$reservedVarsChild = self::$reservedVarsChild;
 	}
 
-	public function getFilteredString(){
-		return $this->statuses[$this->filtered];
+	public function preInsert(){
+		$this->dateInsert = date("Y-d-m H:i:s");
 	}
 
-	public function getFilteredCssString(){
-		return $this->statusesCss[$this->filtered];
+	public function preUpdate(){
+		$this->dateUpdate = date("Y-d-m H:i:s");
+	}
+
+	public function getVulnHostByVulnIpPortHost($ip=null, $port=null, $host=null){
+		$db = Registry::getDb();
+		$query = "SELECT * FROM `vulns_hosts` WHERE `ip`='".mysql_real_escape_string($ip)."' 
+		AND `port`='".mysql_real_escape_string($port)."' AND `host`='".mysql_real_escape_string($host)."'";
+		if($db->query($query)){
+			if($db->getNumRows()){
+				$row = $db->fetcharray();
+				return new VulnHost($row);
+			}
+		}
 	}
 
 	public function select($data=array(), $limit=0, $limitStart=0, &$total=null){
 		$db = Registry::getDb();
         //Query
-		$query = "SELECT * FROM `services` WHERE 1=1 ";
+		$query = "SELECT * FROM `vulns_hosts` WHERE 1=1 ";
 		//Total
 		if($db->Query($query)){
 			$total = $db->getNumRows();
@@ -59,7 +61,7 @@ class Service extends Model {
 					if($db->getNumRows()){
 						$rows = $db->loadArrayList();
 						foreach($rows as $row){
-							$results[] = new Service($row);
+							$results[] = new VulnHost($row);
 						}
 						return $results;
 					}

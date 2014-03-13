@@ -128,12 +128,12 @@ INSERT INTO `vulns` (`module`, `name`, `type`, `protocol`, `webappName`, `minVer
 DROP TABLE IF EXISTS `vulns_hosts`;
 CREATE TABLE IF NOT EXISTS `vulns_hosts` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `ip` int(10) unsigned DEFAULT '0',
+  `ip` int(10) unsigned DEFAULT NULL,
   `host` varchar(50) DEFAULT NULL,
+  `webappId` int(10) DEFAULT NULL,
   `vuln` varchar(50) NOT NULL DEFAULT '0',
   `port` smallint(5) unsigned NOT NULL DEFAULT '0',
   `status` tinyint(255) NOT NULL DEFAULT '0',
-  `webappId` int(10) NOT NULL DEFAULT '0',
   `data` text,
   `dateInsert` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `dateUpdate` timestamp NULL DEFAULT NULL,

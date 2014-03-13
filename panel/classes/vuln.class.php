@@ -38,6 +38,10 @@ class Vuln extends Model {
 		$db = Registry::getDb();
         //Query
 		$query = "SELECT * FROM `vulns` WHERE 1=1 ";
+		//Where
+		if($data["protocol"]){
+			$query .= " AND protocol='".mysql_real_escape_string($data["protocol"])."'";
+		}
 		//Total
 		if($db->Query($query)){
 			$total = $db->getNumRows();

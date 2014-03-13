@@ -68,7 +68,7 @@ abstract class Model{
 			//Id
 			}else{
 				$db = Registry::getDb();
-				$query = "SELECT * FROM `".$this->dbTable."` WHERE `".$this->idField."`=".(int)$id;
+				$query = "SELECT * FROM `".$this->dbTable."` WHERE `".$this->idField."`='".mysql_real_escape_string($id)."'";
 				if($db->query($query)){
 					if($db->getNumRows()){
 						$row = $db->fetcharray();
@@ -178,7 +178,7 @@ abstract class Model{
 	    }
 	    //SQL
 	    $idField = $this->idField;
-	    $query = "UPDATE `".$this->dbTable."` SET ".implode(" , ",$values)." WHERE `".$this->idField."`=".(int)$this->$idField;
+	    $query = "UPDATE `".$this->dbTable."` SET ".implode(" , ",$values)." WHERE `".$this->idField."`='".mysql_real_escape_string($this->$idField)."'";
 		if($db->query($query)) {
 	    	//Post Update
 	    	$this->postUpdate($array);
@@ -250,7 +250,7 @@ abstract class Model{
 		$this->preDelete($array);
 		//Delete
 		$idField = $this->idField;
-		$query = "DELETE FROM `".$this->dbTable."` WHERE `".$this->idField."`=".(int)$this->$idField;
+		$query = "DELETE FROM `".$this->dbTable."` WHERE `".$this->idField."`='".mysql_real_escape_string($this->$idField)."'";
 		if($db->Query($query)){
 			//Post Insert
 			$this->postDelete($array);
