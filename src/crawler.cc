@@ -295,6 +295,11 @@ int main(int argc, char **argv) {
 					sprintf(upq,"UPDATE `virtualhosts` SET `status`=`status`|1 WHERE `host`=\"%s\"", row[0]);
 					mysql_query(mysql_conn_update2,upq);
 				}
+				else {
+					char upq[2048];
+					sprintf(upq,"UPDATE `services` SET `status`=`status`|1 WHERE `ip`=\"%s\" AND `port`=\"%s\"", row[0], row[1]);
+					mysql_query(mysql_conn_update2,upq);				
+				}
 			}
 		}
 		
@@ -575,7 +580,7 @@ void * database_dispatcher(void * args) {
 					if (bannercrawl) {
 						char tempb[cquery->received*2+2];
 						mysql_real_escape_string(mysql_conn_update, tempb, cquery->inbuffer, cquery->received);
-						sprintf(sql_query, "UPDATE services SET `head`='%s',`status`=`status`&(~1) WHERE `ip`=%d AND `port`=%d\n",
+						sprintf(sql_query,"UPDATE `services` SET `head`='%s',`status`=`status`&(~1) WHERE `ip`=%d AND `port`=%d\n",
 							tempb, cquery->ip, cquery->port);
 					}else{
 						int eflag = cquery->status == reqCompleteError ? 0x80 : 0;
