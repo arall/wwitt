@@ -17,6 +17,7 @@ int verbose = 1;
 // Maximum query size, 1MB
 #define MAX_BUFFER_SIZE   (1024*1024)
 #define NUM_WORKERS       12
+#define NUM_SERVICES      2
 
 MYSQL *mysql_conn_select;
 MYSQL *mysql_conn_update;
@@ -45,14 +46,13 @@ struct job_object * new_job() {
 	return j;
 }
 
-
 void create_bing_url(char * url, unsigned int ip, int pagen) {
 	struct in_addr in;
 	in.s_addr = ip;
 	char * ipaddr = inet_ntoa(in);
 	sprintf(url, "http://www.bing.com/search?first=%d&q=IP:%s", pagen, ipaddr);
 }
-void create_dt_url(char * url, unsigned int ip) {
+void create_dt_url(char * url, unsigned int ip, int pagen) {
 	struct in_addr in;
 	in.s_addr = ip;
 	char * ipaddr = inet_ntoa(in);
@@ -64,6 +64,27 @@ void create_webhostinfo_url(char * url, unsigned int ip, int pagen) {
 	char * ipaddr = inet_ntoa(in);
 	sprintf(url, "http://whois.webhosting.info/%s?pi=%d", ipaddr, pagen);
 }
+void create_whoisrequest_url(char * url, unsigned int ip, int pagen) {
+	struct in_addr in;
+	in.s_addr = ip;
+	char * ipaddr = inet_ntoa(in);
+	sprintf(url, "http://whoisrequest.org/reverse-ip/%s&page=%d", ipaddr, pagen);
+}
+
+
+void webhostinfo_parser(void * buffer, int size, struct pqueue * job_queue,struct job_object *job);
+void whoisrequest_parser(void * buffer, int size, struct pqueue * job_queue,struct job_object *job);
+
+
+typedef void (*create_url_type)(char*, unsigned int, int);
+create_url_type create_url_array[2] = {
+	create_webhostinfo_url,
+	create_whoisrequest_url,
+};
+callback_fn callback_array[2] = {
+	webhostinfo_parser,
+	whoisrequest_parser,
+};
 
 
 static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream) {
@@ -159,6 +180,9 @@ void compile_regexp() {
 
 	const char * pat6 = "<input[^>]*type='hidden'[^>]*name='enck'[^>]* value='([^']*)'>";
 	reg6 = pcre_compile (pat6, PCRE_MULTILINE, &error, &erroffset, 0);
+
+	const char * pat7 = "<a[^>]*href=\"/whois/[^\"]*\"[^>]*>([^<]*)<";
+	reg7 = pcre_compile (pat7, PCRE_MULTILINE, &error, &erroffset, 0);
 }
 
 void database_insert(const char * host, const char * ipaddr) {
@@ -185,7 +209,6 @@ void database_insert(const char * host, const char * ipaddr) {
 }
 
 char * decode1(void * buffer, int size);
-void webhostinfo_parser(void * buffer, int size, struct pqueue * job_queue,struct job_object *job);
 
 void webhostinfo_captcha(void * buffer, int size, struct pqueue * job_queue, struct job_object *job) {
 	if (verbose)
@@ -322,6 +345,40 @@ void webhostinfo_parser(void * buffer, int size, struct pqueue * job_queue,struc
 		database_insert(0, ipaddr);
 	}
 }
+// Parse whoisreuqest.org result page
+void whoisrequest_parser(void * buffer, int size, struct pqueue * job_queue,struct job_object *job) {
+	char * cbuffer = (char*)buffer;
+	cbuffer[size] = 0; // We have some space after the buffer
+
+	struct in_addr in;
+	in.s_addr = job->ip;
+	char * ipaddr = inet_ntoa(in);
+
+	int ovector[9];
+	int off = 0;
+	while (pcre_exec(reg7, 0, cbuffer, size, off, 0, ovector, 9) > 0) {
+		char temp[4096]; memset(temp,0,sizeof(temp));
+		memcpy(temp,&cbuffer[ovector[2]],ovector[3]-ovector[2]);
+		database_insert(temp, ipaddr);
+		if (verbose)
+			printf("Match found %s\n",temp);
+		off = ovector[1];
+	}
+
+	// Schedule a new page if there's any
+	if (strstr(cbuffer,"Next »") != 0) {
+		struct job_object * njob = new_job();
+		njob->ip = job->ip;
+		njob->n = job->n+1;
+		create_whoisrequest_url(njob->url,njob->ip,njob->n);
+		njob->callback = whoisrequest_parser;
+		pqueue_push_front(job_queue, njob);
+	}
+	else {
+		// Done with this IP, add it as vhost and mark as done
+		database_insert(0, ipaddr);
+	}
+}
 
 
 void mysql_initialize() {
@@ -357,19 +414,34 @@ int main(int argc, char **argv) {
 "         World Wide Internet Takeover Tool          \n"
 "                Reverse IP crawler                  \n"  );
 
+	int web = -1;
+	int force = 0;
 	if (argc == 2 && strcmp(argv[1],"-h") == 0) {
-		fprintf(stderr,"Usage: %s [IPstart IPend]\n", argv[0]);
+		fprintf(stderr,"Usage: %s [IPstart IPend] [webhostinginfo | whoisrequest | all]\n", argv[0]);
 		exit(0);
+	}
+	else if (argc == 2 || argc == 4) {
+		if (strcmp(argv[argc-1],"all") == 0)
+			web = -1;
+		else if (strcmp(argv[argc-1],"webhostinginfo") == 0)
+			web = 0;
+		else if (strcmp(argv[argc-1],"whoisrequest") == 0)
+			web = 1;
+		else {
+			fprintf(stderr, "Wrong argument %s\n", argv[argc-1]);
+			exit(1);
+		}
 	}
 
 	unsigned long start_ip =  0;
 	unsigned long end_ip   = ~0;
-	if (argc == 3) {
+	if (argc == 3 || argc == 4) {
 		inet_aton(argv[1], (struct in_addr*)&start_ip);
 		inet_aton(argv[2], (struct in_addr*)&end_ip);
 		start_ip = ntohl(start_ip);
 		end_ip = ntohl(end_ip);
 		printf("Filtering IPS: %u ... %u\n", start_ip, end_ip);
+		force = 1;
 	}
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -387,29 +459,30 @@ int main(int argc, char **argv) {
 
 	// Now query IPs and enqueue jobs
 	char sql_query[2048];
+	
+	if (force) {
+		sprintf(sql_query, "UPDATE `hosts` SET `status`=`status`&(~1) WHERE `ip` >= %u AND `ip` <= %u", start_ip, end_ip);
+		mysql_query(mysql_conn_select, sql_query);
+	}
+	
 	sprintf(sql_query, "SELECT `ip` FROM `hosts` WHERE `status`&1=0 AND `ip` >= %u AND `ip` <= %u", start_ip, end_ip);
 	mysql_query(mysql_conn_select, sql_query);
 	MYSQL_RES *result = mysql_store_result(mysql_conn_select);
 	MYSQL_ROW row;
 	while (result && (row = mysql_fetch_row(result))) {
-		unsigned int ip = ntohl(atoi(row[0]));
+		int wn;
+		for (wn = 0; wn < NUM_SERVICES; wn++) {
+			if (web >= 0 && web != wn) continue;
+			
+			unsigned int ip = ntohl(atoi(row[0]));
 		
-		//create_bing_url(njob->url,ip,i);
-		//njob->callback = bing_parser;
-		//pqueue_push(&job_queue, njob);
-		//njob = new_job();
-
-		struct job_object * njob = new_job();
-		njob->ip = ip;
-		njob->n = 1;
-		create_webhostinfo_url(njob->url,ip,1);
-		njob->callback = webhostinfo_parser;
-		pqueue_push(&job_queue, njob);
-
-		//struct job_object * njob = new_job();
-		//create_dt_url(njob->url,ip);
-		//njob->callback = dt_parser;
-		//pqueue_push(&job_queue, njob);
+			struct job_object * njob = new_job();
+			njob->ip = ip;
+			njob->n = 1;
+			create_url_array[wn] (njob->url,ip,1);
+			njob->callback = callback_array[wn];
+			pqueue_push(&job_queue, njob);
+		}
 
 		while (pqueue_size(&job_queue) > NUM_WORKERS*3)
 			sleep(1);
