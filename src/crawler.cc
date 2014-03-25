@@ -80,7 +80,7 @@ volatile int adder_finish = 0;
 
 int max_inflight = 100;
 int max_dns_inflight = 50;
-int curl_workers = 20;
+int max_curl_inflight = 1;
 
 int setNonblocking(int fd) {
 	int flags;
@@ -214,7 +214,6 @@ int main(int argc, char **argv) {
 	int bannercrawl = (strcmp("banner",argv[1]) == 0);
 	
 	// Initialize structures
-	//memset(&connection_table, 0, sizeof(connection_table));
 	for (int i = 0; i < sizeof(connection_table)/sizeof(connection_table[0]); i++)
 		clean_entry(&connection_table[i]);
 	
@@ -231,6 +230,9 @@ int main(int argc, char **argv) {
 	pthread_t dns_workers[max_dns_inflight];
 	for (int i = 0; i < max_dns_inflight; i++)
 		pthread_create (&dns_workers[i], NULL, &dns_dispatcher, (void*)i);
+	pthread_t curl_workers[max_curl_inflight];
+	for (int i = 0; i < max_curl_inflight; i++)
+		pthread_create (&curl_workers[i], NULL, &curl_dispatcher, (void*)i);
 
 	int num_active = 0;	
 	// Infinite loop: query IP/Domain blocks
@@ -357,10 +359,11 @@ int main(int argc, char **argv) {
 			
 			if (cq->status == reqError) {
 				if (cq->retries++ < MAX_RETRIES) {
-					cq->status = reqDnsQuery;
 					cq->tosend_offset = 0;
 					cq->received = 0;
 					cq->start_time = time(0);
+					if (bannercrawl) cq->status = reqConnecting;
+					else cq->status = (cq->url.substr(0,7) == "http://") ? reqDnsQuery : reqCurl;
 				}
 				else {
 					// We are done with this guy, mark is as false ready
@@ -395,6 +398,8 @@ int main(int argc, char **argv) {
 	pthread_join(db, NULL);
 	for (int i = 0; i < max_dns_inflight; i++)
 		pthread_join (dns_workers[i], NULL);
+	for (int i = 0; i < max_curl_inflight; i++)
+		pthread_join (curl_workers[i], NULL);
 }
 
 void db_reconnect(MYSQL ** c) {
@@ -551,7 +556,7 @@ void * database_dispatcher(void * args) {
 				dechunk_http(cquery->inbuffer,&cquery->received);
 				std::string newloc = parse_response((char*)cquery->inbuffer, cquery->received, cquery->url);
 				
-				if (newloc != "" && cquery->redirs < MAX_REDIRS) {
+				if (newloc != "" && cquery->redirs < MAX_REDIRS && !bannercrawl) {
 					// Reuse the same entry for the request
 					cquery->retries = 0;
 					cquery->redirs++;
@@ -564,7 +569,6 @@ void * database_dispatcher(void * args) {
 					cquery->start_time = time(0);
 					setNonblocking(cquery->socket);
 
-					// FIXME: Check for HTTPS and submit this element to secondchance queue
 					free(cquery->outbuffer);
 					std::string path = getpathname(newloc);
 					std::string host = gethostname(newloc);
@@ -574,7 +578,7 @@ void * database_dispatcher(void * args) {
 					cquery->url = newloc;
 					std::cout << "Query " << cquery->url << std::endl;
 
-					cquery->status = (cquery->url.substr(0,7) == "http://") ? reqDnsQuery : reqDnsQuery; // FIXME
+					cquery->status = (cquery->url.substr(0,7) == "http://") ? reqDnsQuery : reqCurl;
 				}
 				else{ 
 					if (bannercrawl) {
@@ -632,7 +636,7 @@ void * curl_dispatcher(void * args) {
 	while (!adder_finish) {
 		// Look for successful or failed transactions
 		int found = 0;
-		for (int i = num_thread; i < MAX_OUTSTANDING_QUERIES; i += curl_workers) {
+		for (int i = num_thread; i < MAX_OUTSTANDING_QUERIES; i += max_curl_inflight) {
 			struct connection_query * cquery = &connection_table[i];
 			
 			if (cquery->status == reqCurl) {
