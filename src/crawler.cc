@@ -373,8 +373,12 @@ int main(int argc, char **argv) {
 				}
 			}
 			if (cq->status == reqConnecting || cq->status == reqTransfer) {
-				if (time(0) - cq->start_time > MAX_TIMEOUT)
-					cq->status = reqError;
+				if (time(0) - cq->start_time > MAX_TIMEOUT) {
+					if (bannercrawl && cq->received > 0)
+						cq->status = reqComplete;
+					else
+						cq->status = reqError;
+				}
 
 				int mask = POLLERR;
 				mask |= (cq->tosend_offset < cq->tosend_max) ? POLLOUT : 0;
@@ -580,7 +584,7 @@ void * database_dispatcher(void * args) {
 
 					cquery->status = (cquery->url.substr(0,7) == "http://") ? reqDnsQuery : reqCurl;
 				}
-				else{ 
+				else{
 					if (bannercrawl) {
 						char tempb[cquery->received*2+2];
 						mysql_real_escape_string(mysql_conn_update, tempb, cquery->inbuffer, cquery->received);

@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS `services` (
   `product` varchar(50) DEFAULT NULL,
   `version` varchar(50) DEFAULT NULL,
   `dateInsert` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `status` TINYINT(255) UNSIGNED NOT NULL,
   PRIMARY KEY (`ip`,`port`),
   UNIQUE KEY `ipId_port` (`ip`,`port`),
   CONSTRAINT `services_ip` FOREIGN KEY (`ip`) REFERENCES `hosts` (`ip`) ON DELETE CASCADE ON UPDATE CASCADE

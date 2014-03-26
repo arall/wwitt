@@ -77,6 +77,7 @@ struct pseudo_hdr {
 	u_int16_t len;
 };
 
+#define MAX_TIMEOUT 10    // Max 255!
 #define MAX_OUTSTANDING_QUERIES (1024*64)
 struct port_query {
 	struct in_addr ip;
@@ -147,7 +148,7 @@ int main(int argc, char **argv) {
 			plist = strstr(plist, ",");
 			if (plist) plist++;
 		}
-		int KBps = 1024/8*atoi(argv[4]);
+		int KBps = 1024/8*atof(argv[4]);
 		maxpp = (double)(KBps)*1024 / 64;  // Aprox formula
 		
 		struct in_addr last_ip;
@@ -155,7 +156,7 @@ int main(int argc, char **argv) {
 		inet_aton(argv[2], &last_ip);
 		total_ips = ntohl(last_ip.s_addr) - ntohl(current_ip.s_addr);
 		
-		printf("Staring to scan %d ip addresses and %d ports per address\n", total_ips, total_ports);
+		printf("Staring to scan %d ip addresses and %d ports per address at %d KBps\n", total_ips, total_ports, KBps);
 	}
 	
 	if( pcap_findalldevs( &alldevsp , errbuf) < 0 ) {
@@ -451,7 +452,7 @@ void * database_dispatcher(void * args) {
 				entry->status = 0;
 				num_t_ent--;
 			}
-			if (entry->status == 1 && entry->checks > 10) {
+			if (entry->status == 1 && entry->checks > MAX_TIMEOUT) {
 				// Save open/filtered
 				entry->status = 0;
 				num_t_ent--;
