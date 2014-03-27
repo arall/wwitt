@@ -23,10 +23,12 @@
 #include <sys/resource.h> 
 
 // Requests have the format:
+// UUID\n
 // URL\n
-// User-Agent\n  (Empty User-Agent uses the default one)
+// Req size in ASCII form\n
+// Request
 // Responses are in the form:
-// URL\n
+// UUID\n
 // response size (head+body) in ASCII form \n
 // head+body (bunch of bytes)
 
@@ -62,6 +64,7 @@ enum RequestsStatus {
 };
 
 struct connection_query {
+	unsigned long long uuid;
 	RequestsStatus status;
 
 	int socket;
@@ -90,6 +93,7 @@ void clear_query(connection_query * c) {
 	c->socket = 0;
 	c->ip = 0; c->port = 0;
 	c->redirs = c->retries = 0;
+	c->uuid = 0;
 }
 
 #define CONNECT_ERR(ret) (ret < 0 && errno != EINPROGRESS && errno != EALREADY && errno != EISCONN)
@@ -155,9 +159,9 @@ std::string getpathname(const std::string & url) {
 		return r.substr(p);
 }
 
-std::string int_to_str (int a) {
+std::string long_to_str (long long a) {
 	char temp[256];
-	sprintf(temp,"%d",a);
+	sprintf(temp,"%lld",a);
 	return std::string(temp);
 }
 
@@ -188,6 +192,27 @@ std::string parse_response(char * buffer, int size, const std::string current_ur
 	}
 }
 
+bool next_query(connection_query * cq, std::string & rbuf) {
+	size_t ptrs[3];
+	for (int i = 0; i < sizeof(ptrs)/sizeof(ptrs[0]); i++) {
+		ptrs[i] = rbuf.find("\n", i > 0 ? ptrs[i-1]+1 : 0);
+		if (ptrs[i] == std::string::npos)
+			return false;
+	}
+	cq->uuid = atol(rbuf.substr(0,ptrs[0]).c_str());
+	cq->url  = rbuf.substr(ptrs[0]+1,ptrs[1]-2);
+	long long rsize = atol(rbuf.substr(ptrs[1]+1,ptrs[2]-ptrs[1]-1).c_str());
+	if (rbuf.size() - ptrs[2] - 1 < rsize)
+		return false;
+
+	std::string req = rbuf.substr(ptrs[2]+1, rsize);
+	cq->outbuffer = (char*)malloc(req.size());
+	memcpy(cq->outbuffer, req.c_str(), req.size());
+	cq->tosend_max = req.size();
+
+	rbuf = rbuf.substr(ptrs[2] + 1 + rsize);
+	return true;
+}
 
 int main(int argc, char **argv) {
 	printf(
@@ -255,14 +280,16 @@ int main(int argc, char **argv) {
 				}
 			}
 			
+			connection_query reqq;
 			size_t p = request_buffer.find("\n");
-			while (p != std::string::npos) {
-				std::string url = request_buffer.substr(0,p);
+			while (next_query(&reqq, request_buffer)) {
+				std::string url = reqq.url;
 				std::cerr << "Scheduling " << url << std::endl;
 				
 				for (int i = 0; i < MAX_OUTSTANDING_QUERIES; i++) {
 					struct connection_query * cquery = &connection_table[i];
 					if (cquery->status == reqEmpty) {
+						*cquery = reqq;
 						cquery->url = url;
 						
 						// Select between HTTP/HTTPS
@@ -273,9 +300,6 @@ int main(int argc, char **argv) {
 						break;
 					}
 				}
-				
-				request_buffer = request_buffer.substr(p+1);
-				p = request_buffer.find("\n");
 			}
 		}
 		
@@ -309,8 +333,8 @@ int main(int argc, char **argv) {
 					std::string path = getpathname(cq->url);
 					std::string host = gethostname(cq->url);
 
-					cq->outbuffer = strdup(generateHTTPQuery(host, path).c_str());
-					cq->tosend_max = strlen(cq->outbuffer);
+					//cq->outbuffer = strdup(generateHTTPQuery(host, path).c_str());
+					//cq->tosend_max = strlen(cq->outbuffer);
 					std::cerr << "Connecting " << cq->ip << std::endl;
 				}
 
@@ -386,8 +410,8 @@ int main(int argc, char **argv) {
 				std::string newurl = parse_response((char*)cq->inbuffer, cq->received, cq->url);
 				
 				if (newurl == "") {
-					output_stream += cq->url + "\n";
-					output_stream += int_to_str(cq->received) + "\n";
+					output_stream += long_to_str(cq->uuid) + "\n";
+					output_stream += long_to_str(cq->received) + "\n";
 					output_stream += std::string (cq->inbuffer, cq->received);
 					clear_query(cq);
 				}else{
@@ -567,6 +591,7 @@ void * curl_dispatcher(void * args) {
 			
 			if (cquery->status == reqCurl) {
 				cquery->status == reqCurlTransfer;
+				found = 1;
 
 				struct http_query hq;
 				memset(&hq,0,sizeof(hq));
@@ -595,6 +620,8 @@ void * curl_dispatcher(void * args) {
 				curl_easy_cleanup(curl);
 			}
 		}
+		if (!found)
+			sleep(1);
 	}
 	
 	std::cerr << "Closing cURL thread" << std::endl;
