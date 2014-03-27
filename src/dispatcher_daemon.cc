@@ -230,10 +230,10 @@ int main(int argc, char **argv) {
 	// Start!
 	pthread_t dns_worker_thread[dns_workers];
 	for (int i = 0; i < dns_workers; i++)
-		pthread_create (&dns_worker_thread[i], NULL, &dns_dispatcher, (void*)i);
+		pthread_create (&dns_worker_thread[i], NULL, &dns_dispatcher, (void*)(uintptr_t)i);
 	pthread_t curl_worker_thread[curl_workers];
 	for (int i = 0; i < curl_workers; i++)
-		pthread_create (&curl_worker_thread[i], NULL, &curl_dispatcher, (void*)i);
+		pthread_create (&curl_worker_thread[i], NULL, &curl_dispatcher, (void*)(uintptr_t)i);
 
 	std::string request_buffer;
 
@@ -510,7 +510,7 @@ void dechunk_http(char * buffer, int * size) {
 
 // DNS worker thread
 void * dns_dispatcher(void * args) {
-	int num_thread = (int)args;
+	uintptr_t num_thread = (uintptr_t)args;
 	while (!adder_finish) {
 		// Look for successful or failed transactions
 		int found = 0;
@@ -558,7 +558,7 @@ struct http_query {
 static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream);
 
 void * curl_dispatcher(void * args) {
-	int num_thread = (int)args;
+	uintptr_t num_thread = (uintptr_t)args;
 	while (!adder_finish) {
 		// Look for successful or failed transactions
 		int found = 0;

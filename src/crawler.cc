@@ -229,10 +229,10 @@ int main(int argc, char **argv) {
 
 	pthread_t dns_workers[max_dns_inflight];
 	for (int i = 0; i < max_dns_inflight; i++)
-		pthread_create (&dns_workers[i], NULL, &dns_dispatcher, (void*)i);
+		pthread_create (&dns_workers[i], NULL, &dns_dispatcher, (void*)(uintptr_t)i);
 	pthread_t curl_workers[max_curl_inflight];
 	for (int i = 0; i < max_curl_inflight; i++)
-		pthread_create (&curl_workers[i], NULL, &curl_dispatcher, (void*)i);
+		pthread_create (&curl_workers[i], NULL, &curl_dispatcher, (void*)(uintptr_t)i);
 
 	int num_active = 0;	
 	// Infinite loop: query IP/Domain blocks
@@ -511,7 +511,7 @@ void dechunk_http(char * buffer, int * size) {
 
 // Wait for DNS requests, process them one at a time and store the IP back
 void * dns_dispatcher(void * args) {
-	int offset = (int)args;
+	uintptr_t offset = (uintptr_t)args;
 
 	while (!adder_finish) {
 		struct connection_query * cquery = NULL;
@@ -546,7 +546,7 @@ void * dns_dispatcher(void * args) {
 
 // Walk the table from time to time and insert results into the database
 void * database_dispatcher(void * args) {
-	int bannercrawl = *(int*)args;
+	uintptr_t bannercrawl = (uintptr_t)args;
 	char sql_query[BUFSIZE*2];
 	unsigned long long num_processed = 0;
 
@@ -636,7 +636,7 @@ struct http_query {
 static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream);
 
 void * curl_dispatcher(void * args) {
-	int num_thread = (int)args;
+	uintptr_t num_thread = (uintptr_t)args;
 	while (!adder_finish) {
 		// Look for successful or failed transactions
 		int found = 0;
