@@ -12,6 +12,8 @@ if(!$argv[1] || !$argv[2]){
 	die(echoCli("Example: php testCli.php httpWeakLogin 192.168.1.1", "failure"));
 }
 
+$execTime = microtime(true);
+
 //Define
 $vuln = new Vuln($argv[1]);
 
@@ -39,5 +41,7 @@ if($res){
 //Show messages
 print_r(Registry::getMessages());
 echo "\n";
+
+echoCli("Time: ".(microtime(true)-$execTime)."ms", "notice");
 
 ?>
