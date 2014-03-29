@@ -3,6 +3,9 @@
 //Configuration
 include("config.php");
 
+//Session start
+session_start();
+
 //Autoload Classes
 function __autoload($class_name) {
 	//System
@@ -31,8 +34,6 @@ set_include_path("system/libs/phpseclib");
 include('Net/SSH2.php');
 //Dispatcher
 include('system/libs/http_dispatcher.class.php');
-//Curl Multi Handler
-include('system/libs/curl_multi_handler.class.php');
 
 //Registry
 $registry = new Registry();
