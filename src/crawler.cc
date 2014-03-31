@@ -673,6 +673,8 @@ void * curl_dispatcher(void * args) {
 				curl_easy_cleanup(curl);
 			}
 		}
+		if (!found)
+			sleep(1);
 	}
 	
 	std::cerr << "Closing cURL thread" << std::endl;

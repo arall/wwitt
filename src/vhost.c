@@ -16,8 +16,10 @@ int verbose = 1;
 
 // Maximum query size, 1MB
 #define MAX_BUFFER_SIZE   (1024*1024)
-#define NUM_WORKERS       12
+#define DEFAULT_NUM_WORKERS       12
 #define NUM_SERVICES      2
+
+int NUM_WORKERS = DEFAULT_NUM_WORKERS;
 
 MYSQL *mysql_conn_select;
 MYSQL *mysql_conn_update;
