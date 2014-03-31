@@ -228,11 +228,13 @@ int main(int argc, char **argv) {
 	pthread_create (&db, NULL, &database_dispatcher, &bannercrawl);
 
 	pthread_t dns_workers[max_dns_inflight];
-	for (int i = 0; i < max_dns_inflight; i++)
-		pthread_create (&dns_workers[i], NULL, &dns_dispatcher, (void*)(uintptr_t)i);
 	pthread_t curl_workers[max_curl_inflight];
-	for (int i = 0; i < max_curl_inflight; i++)
-		pthread_create (&curl_workers[i], NULL, &curl_dispatcher, (void*)(uintptr_t)i);
+	if (!bannercrawl) {
+		for (int i = 0; i < max_dns_inflight; i++)
+			pthread_create (&dns_workers[i], NULL, &dns_dispatcher, (void*)(uintptr_t)i);
+		for (int i = 0; i < max_curl_inflight; i++)
+			pthread_create (&curl_workers[i], NULL, &curl_dispatcher, (void*)(uintptr_t)i);
+	}
 
 	int num_active = 0;	
 	// Infinite loop: query IP/Domain blocks
@@ -400,10 +402,12 @@ int main(int argc, char **argv) {
 	mysql_close(mysql_conn_select);
 	
 	pthread_join(db, NULL);
-	for (int i = 0; i < max_dns_inflight; i++)
-		pthread_join (dns_workers[i], NULL);
-	for (int i = 0; i < max_curl_inflight; i++)
-		pthread_join (curl_workers[i], NULL);
+	if (!bannercrawl) {
+		for (int i = 0; i < max_dns_inflight; i++)
+			pthread_join (dns_workers[i], NULL);
+		for (int i = 0; i < max_curl_inflight; i++)
+			pthread_join (curl_workers[i], NULL);
+	}
 }
 
 void db_reconnect(MYSQL ** c) {
