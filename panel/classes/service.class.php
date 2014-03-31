@@ -39,6 +39,10 @@ class Service extends Model {
 		$db = Registry::getDb();
         //Query
 		$query = "SELECT * FROM `services` WHERE 1=1 ";
+		//Where
+		if($data["ip"]){
+			$query .= " AND `ip`=".(int)$data["ip"];
+		}
 		//Total
 		if($db->Query($query)){
 			$total = $db->getNumRows();

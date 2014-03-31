@@ -1,10 +1,10 @@
 <?php
-
 /**
  * This is just for faster exploit development.
  */
 
-define("CLI_DEBUG", true); //Dont save the results
+//Dont save the results
+define("CLI_DEBUG", true);
 
 include("index.php");
 
