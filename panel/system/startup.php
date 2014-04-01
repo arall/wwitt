@@ -21,7 +21,8 @@ function __autoload($class_name) {
         return;
     }
 }
-
+//Functions
+include("system/functions.php");
 //Libs
 //SQL Formater (For better debugging)
 include 'system/libs/SqlFormatter.php';
@@ -34,7 +35,8 @@ set_include_path("system/libs/phpseclib");
 include('Net/SSH2.php');
 //Dispatcher
 include('system/libs/http_dispatcher.class.php');
-
+//Parallel Curl
+include('system/libs/parallelcurl.php');
 //Registry
 $registry = new Registry();
 
