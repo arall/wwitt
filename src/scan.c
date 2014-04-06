@@ -78,7 +78,7 @@ struct pseudo_hdr {
 };
 
 #define MAX_TIMEOUT 10    // Max 255!
-#define MAX_OUTSTANDING_QUERIES (1024*1024*64)
+#define MAX_OUTSTANDING_QUERIES (1024*1024*2)
 struct port_query {
 	struct in_addr ip;
 	unsigned short port;
@@ -134,7 +134,7 @@ int main(int argc, char **argv) {
 "         World Wide Internet Takeover Tool          \n"
 "                    Port scanner                    \n"  );
 
-	printf("Using %ull MB \n", sizeof(port_scans)/1024/1024);
+	printf("Using %d MB \n", sizeof(port_scans)/1024/1024);
 	if (argc < 6) {
 		fprintf(stderr,"Usage: %s IPstart IPend ports{max 32} speed(mbps) device\n", argv[0]);
 		exit(1);
