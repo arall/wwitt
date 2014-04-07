@@ -419,31 +419,51 @@ int main(int argc, char **argv) {
 	int web = -1;
 	int force = 0;
 	if (argc == 2 && strcmp(argv[1],"-h") == 0) {
-		fprintf(stderr,"Usage: %s [IPstart IPend] [webhostinginfo | whoisrequest | all]\n", argv[0]);
+		fprintf(stderr,"Usage: %s [-r IPstart IPend] [-s webhostinginfo | whoisrequest | all] [-n numworkers]\n", argv[0]);
 		exit(0);
 	}
-	else if (argc == 2 || argc == 4) {
-		if (strcmp(argv[argc-1],"all") == 0)
-			web = -1;
-		else if (strcmp(argv[argc-1],"webhostinginfo") == 0)
-			web = 0;
-		else if (strcmp(argv[argc-1],"whoisrequest") == 0)
-			web = 1;
-		else {
-			fprintf(stderr, "Wrong argument %s\n", argv[argc-1]);
-			exit(1);
+
+	int i;
+	int err = 0;
+	unsigned long start_ip =  0;
+	unsigned long end_ip   = ~0;
+
+	for (i = 1; i < argc; i++) {
+		if (strcmp(argv[i],"-r") == 0) {
+			if (i+2 >= argc) err = 1;
+			else {
+				inet_aton(argv[i+1], (struct in_addr*)&start_ip);
+				inet_aton(argv[i+2], (struct in_addr*)&end_ip);
+				start_ip = ntohl(start_ip);
+				end_ip = ntohl(end_ip);
+				printf("Filtering IPS: %u ... %u\n", start_ip, end_ip);
+				force = 1;
+			}
+		}
+		else if (strcmp(argv[i],"-s") == 0) {
+			if (i+1 >= argc) err = 1;
+			else {
+				if (strcmp(argv[i+1],"all") == 0)
+					web = -1;
+				else if (strcmp(argv[i+1],"webhostinginfo") == 0)
+					web = 0;
+				else if (strcmp(argv[i+1],"whoisrequest") == 0)
+					web = 1;
+				else
+					err = 1;
+			}
+		}
+		else if (strcmp(argv[i],"-n") == 0) {
+			if (i+1 >= argc) err = 1;
+			else {
+				NUM_WORKERS = atoi(argv[i+1]);
+			}
 		}
 	}
 
-	unsigned long start_ip =  0;
-	unsigned long end_ip   = ~0;
-	if (argc == 3 || argc == 4) {
-		inet_aton(argv[1], (struct in_addr*)&start_ip);
-		inet_aton(argv[2], (struct in_addr*)&end_ip);
-		start_ip = ntohl(start_ip);
-		end_ip = ntohl(end_ip);
-		printf("Filtering IPS: %u ... %u\n", start_ip, end_ip);
-		force = 1;
+	if (err) {
+		fprintf(stderr, "Wrong arguments! Check help using \"-h\"\n");
+		exit(1);
 	}
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -455,7 +475,6 @@ int main(int argc, char **argv) {
 	struct pqueue job_queue;
 	pqueue_init(&job_queue);
 	pthread_t curl_workers[NUM_WORKERS];
-	int i;
 	for (i = 0; i < NUM_WORKERS; i++)
 		pthread_create (&curl_workers[i], NULL, &worker_thread, &job_queue);
 
