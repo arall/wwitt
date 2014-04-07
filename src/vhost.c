@@ -137,6 +137,7 @@ void * worker_thread(void * args) {
 
 		curl_easy_cleanup(curl);
 		
+		free(hq.buffer);
 		free(job);
 		job = pqueue_pop(q);
 	}
