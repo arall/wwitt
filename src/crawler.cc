@@ -199,11 +199,13 @@ int main(int argc, char **argv) {
 
 	fprintf(stderr, "Using about %u memory mega-bytes table\n", sizeof(connection_table)>>20);
 	
-	if ( argc < 2 || (strcmp("banner",argv[1]) == 0 && argc < 5) ) {
-		fprintf(stderr, "Usage: %s http\n", argv[0]);
-		fprintf(stderr, "Usage: %s banner IPstart IPend ports{max 32}\n", argv[0]);
+	if ( argc < 2 ) {
+		fprintf(stderr, "Usage: %s http   [max-requests]\n", argv[0]);
+		fprintf(stderr, "Usage: %s banner [max-requests]\n", argv[0]);
 		exit(1);
 	}
+	if (argc == 3)
+		max_inflight = atoi(argv[2]);
 	
 	struct rlimit limit; limit.rlim_cur = MAX_OUTSTANDING_QUERIES*1.1f; limit.rlim_max = MAX_OUTSTANDING_QUERIES*1.6f;
 	if (setrlimit(RLIMIT_NOFILE, &limit)<0) {
@@ -222,6 +224,7 @@ int main(int argc, char **argv) {
 	
 	// Clear "inflight flag"
 	mysql_query(mysql_conn_update,"UPDATE `virtualhosts` SET `status`=`status`&(~1)");
+	mysql_query(mysql_conn_update,"UPDATE `services` SET `status`=`status`&(~1)");
 	
 	// Start!
 	pthread_t db;
@@ -238,8 +241,8 @@ int main(int argc, char **argv) {
 
 	int num_active = 0;	
 	// Infinite loop: query IP/Domain blocks
-	const char * query = "SELECT DISTINCT `host` FROM virtualhosts WHERE (`head` IS null OR `index` IS null) AND `status`&1 = 0";
-	if (bannercrawl) query = "SELECT `ip`, `port` FROM services WHERE `head` IS null AND `status`&1 = 0";
+	const char * query = "SELECT DISTINCT `host` FROM `virtualhosts` WHERE (`head` IS null OR `index` IS null) AND `status`&1 = 0";
+	if (bannercrawl) query = "SELECT `ip`, `port` FROM `services` WHERE `head` IS null AND `status`&1 = 0";
 	while (1) {
 		// Generate queries and generate new connections
 		if (num_active < max_inflight) {
