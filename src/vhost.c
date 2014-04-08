@@ -403,6 +403,11 @@ void mysql_initialize() {
 	char *database = getenv("MYSQL_DB");
 	mysql_conn_select = mysql_init(NULL);
 	mysql_conn_update = mysql_init(NULL);
+	// Enable auto-reconnect, as some versions do not enable it by default
+	my_bool reconnect = 1;
+	mysql_options(mysql_conn_select, MYSQL_OPT_RECONNECT, &reconnect);
+	mysql_options(mysql_conn_update, MYSQL_OPT_RECONNECT, &reconnect);
+
 	/* Connect to database */
 	printf("Connecting to mysqldb...\n");
 	if (mysql_real_connect(mysql_conn_select, server, user, password, database, 0, NULL, CLIENT_MULTI_STATEMENTS) == 0|| 

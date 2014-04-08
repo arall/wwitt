@@ -213,6 +213,10 @@ void mysql_initialize() {
 	if (!server) server = "localhost";
 	
 	mysql_conn = mysql_init(NULL);
+	// Enable auto-reconnect, as some versions do not enable it by default
+	my_bool reconnect = 1;
+	mysql_options(mysql_conn, MYSQL_OPT_RECONNECT, &reconnect);
+
 	/* Connect to database */
 	printf("Connecting to mysqldb...\n");
 	if (!mysql_real_connect(mysql_conn, server, user, password, database, 0, NULL, 0)) {
