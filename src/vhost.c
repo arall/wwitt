@@ -195,8 +195,10 @@ void compile_regexp() {
 }
 
 void db_flush() {
-	mysql_query(mysql_conn_update, sql_qbuffer);
+	int r = mysql_query(mysql_conn_update, sql_qbuffer);
 	sql_qbuffer[0] = 0;
+	if (r)
+		printf("MYSQL ERROR %s\n", mysql_error(mysql_conn_update));
 }
 
 void database_insert(const char * host, const char * ipaddr) {
