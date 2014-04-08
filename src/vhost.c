@@ -23,8 +23,10 @@ int NUM_WORKERS = DEFAULT_NUM_WORKERS;
 
 MYSQL *mysql_conn_select;
 MYSQL *mysql_conn_update;
-pthread_mutex_t update_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t qinsert_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t ocr_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+char sql_qbuffer[2*1024*1024];
 
 struct job_object;
 typedef void (*callback_fn)(void*,int,struct pqueue*,struct job_object *);
@@ -193,22 +195,21 @@ void database_insert(const char * host, const char * ipaddr) {
 	struct in_addr in;
 	inet_aton(ipaddr,&in); unsigned int ip = ntohl(in.s_addr);
 
-	pthread_mutex_lock(&update_mutex);
-	if (host) {
+	if (host)
 		// Add one host
-		sprintf(tquery, "INSERT INTO `virtualhosts` (`host`) VALUES (LOWER('%s'))", host);
-		mysql_query(mysql_conn_update, tquery);
-	}
+		sprintf(tquery, "INSERT INTO `virtualhosts` (`host`) VALUES (LOWER('%s'));", host);
 	else
-	{
 		// Mark the host as done
-		sprintf(tquery, "UPDATE `hosts` SET `status`=`status`|1, `dateUpdate`=now() WHERE ip=%u", ip);
-		mysql_query(mysql_conn_update, tquery);
-		// Insert the host as vhost too only if port 80 is open (not filtered)
-		//sprintf(tquery, "INSERT INTO `virtualhosts` (`host`) SELECT '%s' WHERE (SELECT COUNT(*) FROM `services` WHERE `port`=80 AND `filtered`=0 AND `ip.. ) ", ipaddr);
-		//mysql_query(mysql_conn_update, tquery);
+		sprintf(tquery, "UPDATE `hosts` SET `status`=`status`|1, `dateUpdate`=now() WHERE ip=%u;", ip);
+
+	pthread_mutex_lock(&qinsert_mutex);
+
+	if (strlen(sql_qbuffer) > sizeof(sql_qbuffer)*0.8f) {
+		mysql_query(mysql_conn_update, sql_qbuffer);
+		sql_qbuffer[0] = 0;
 	}
-	pthread_mutex_unlock(&update_mutex);
+	strcat(sql_qbuffer, tquery);
+	pthread_mutex_unlock(&qinsert_mutex);
 }
 
 char * decode1(void * buffer, int size);
@@ -393,8 +394,8 @@ void mysql_initialize() {
 	mysql_conn_update = mysql_init(NULL);
 	/* Connect to database */
 	printf("Connecting to mysqldb...\n");
-	if (mysql_real_connect(mysql_conn_select, server, user, password, database, 0, NULL, 0) == 0|| 
-		mysql_real_connect(mysql_conn_update, server, user, password, database, 0, NULL, 0) == 0 ) {
+	if (mysql_real_connect(mysql_conn_select, server, user, password, database, 0, NULL, CLIENT_MULTI_STATEMENTS) == 0|| 
+		mysql_real_connect(mysql_conn_update, server, user, password, database, 0, NULL, CLIENT_MULTI_STATEMENTS) == 0 ) {
 		fprintf(stderr, "%s\n", mysql_error(mysql_conn_select));
 		fprintf(stderr, "%s\n", mysql_error(mysql_conn_update));
 		fprintf(stderr, "User %s Pass %s Host %s Database %s\n", user, password, server, database);
@@ -428,6 +429,7 @@ int main(int argc, char **argv) {
 	int err = 0;
 	unsigned long start_ip =  0;
 	unsigned long end_ip   = ~0;
+	memset(sql_qbuffer,0,sizeof(sql_qbuffer));
 
 	for (i = 1; i < argc; i++) {
 		if (strcmp(argv[i],"-r") == 0) {
