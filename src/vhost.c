@@ -10,9 +10,11 @@
 #include <arpa/inet.h>
 #include <regex.h>
 #include <pcre.h>
+#include <signal.h>
 #include "pqueue.h"
 
 int verbose = 1;
+int adder_finish = 0;
 
 // Maximum query size, 1MB
 #define MAX_BUFFER_SIZE   (1024*1024)
@@ -411,6 +413,10 @@ void mysql_initialize() {
 	printf("Connected!\n");
 }
 
+void sigterm(int s) {
+	printf("Stopping due to SIGINT/SIGTERM... This will take some seconds, be patient :)\n");
+	adder_finish = 1;
+}
 
 int main(int argc, char **argv) {
 	printf(
@@ -495,6 +501,9 @@ int main(int argc, char **argv) {
 		sprintf(sql_query, "UPDATE `hosts` SET `status`=`status`&(~1) WHERE `ip` >= %u AND `ip` <= %u", start_ip, end_ip);
 		mysql_query(mysql_conn_select, sql_query);
 	}
+
+	signal(SIGTERM, &sigterm);
+	signal(SIGINT, &sigterm);
 	
 	sprintf(sql_query, "SELECT `ip` FROM `hosts` WHERE `status`&1=0 AND `ip` >= %u AND `ip` <= %u", start_ip, end_ip);
 	mysql_query(mysql_conn_select, sql_query);
@@ -519,6 +528,9 @@ int main(int argc, char **argv) {
 			sleep(1);
 
 		printf("%d jobs in the queue\n", pqueue_size(&job_queue));
+
+		if (adder_finish)
+			break;  // Stop it here!
 	}
 	
 	// Now stop all the threads
