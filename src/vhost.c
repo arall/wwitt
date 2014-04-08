@@ -107,7 +107,8 @@ static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream)
 }
 
 void * worker_thread(void * args) {
-	printf("Spawning thread\n");
+	if (verbose)
+		printf("Spawning thread\n");
 	struct pqueue * q = (struct pqueue*)args;
 	struct job_object * job = pqueue_pop(q);
 	while (job != NULL) {
@@ -144,7 +145,8 @@ void * worker_thread(void * args) {
 		job = pqueue_pop(q);
 	}
 	
-	printf("Ending thread\n");
+	if (verbose)
+		printf("Ending thread\n");
 }
 
 struct re_pattern_buffer reg1, reg2, reg3;
@@ -190,6 +192,11 @@ void compile_regexp() {
 	reg7 = pcre_compile (pat7, PCRE_MULTILINE, &error, &erroffset, 0);
 }
 
+void db_flush() {
+	mysql_query(mysql_conn_update, sql_qbuffer);
+	sql_qbuffer[0] = 0;
+}
+
 void database_insert(const char * host, const char * ipaddr) {
 	char tquery[8*1024];
 	struct in_addr in;
@@ -197,17 +204,16 @@ void database_insert(const char * host, const char * ipaddr) {
 
 	if (host)
 		// Add one host
-		sprintf(tquery, "INSERT INTO `virtualhosts` (`host`) VALUES (LOWER('%s'));", host);
+		sprintf(tquery, "INSERT IGNORE INTO `virtualhosts` (`host`) VALUES (LOWER('%s'));", host);
 	else
 		// Mark the host as done
 		sprintf(tquery, "UPDATE `hosts` SET `status`=`status`|1, `dateUpdate`=now() WHERE ip=%u;", ip);
 
 	pthread_mutex_lock(&qinsert_mutex);
 
-	if (strlen(sql_qbuffer) > sizeof(sql_qbuffer)*0.8f) {
-		mysql_query(mysql_conn_update, sql_qbuffer);
-		sql_qbuffer[0] = 0;
-	}
+	if (strlen(sql_qbuffer) > sizeof(sql_qbuffer)*0.8f)
+		db_flush();
+	
 	strcat(sql_qbuffer, tquery);
 	pthread_mutex_unlock(&qinsert_mutex);
 }
@@ -290,7 +296,8 @@ void dt_parser(void * buffer, int size, struct pqueue * job_queue,struct job_obj
 			char * slash = strstr(temp,"/");
 			if (slash) *slash = 0;
 			//database_insert(temp, ipaddr);
-			printf("Match found %s %s\n",temp,ipaddr);
+			if (verbose)
+				printf("Match found %s %s\n",temp,ipaddr);
 			off = regs.end[1];
 		}
 		else break;
