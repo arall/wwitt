@@ -525,6 +525,9 @@ int main(int argc, char **argv) {
 	pqueue_release(&job_queue);
 	for (i = 0; i < NUM_WORKERS; i++)
 		pthread_join (curl_workers[i],0);
+
+	// Flush remaining queries to DB
+	db_flush();
 	
 	curl_global_cleanup();
 } 
