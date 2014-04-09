@@ -13,7 +13,7 @@
 #include <signal.h>
 #include "pqueue.h"
 
-int verbose = 1;
+int verbose = 0;
 int adder_finish = 0;
 
 // Maximum query size, 1MB
@@ -206,10 +206,11 @@ void database_insert(const char * host, const char * ipaddr) {
 	struct in_addr in;
 	inet_aton(ipaddr,&in); unsigned int ip = ntohl(in.s_addr);
 
-	if (host)
+	if (host) {
 		// Add one host
 		sprintf(tquery, "INSERT IGNORE INTO `virtualhosts` (`host`) VALUES (LOWER('%s'));", host);
-	else
+		printf("Found domain %s\n", host);
+	}else
 		// Mark the host as done
 		sprintf(tquery, "UPDATE `hosts` SET `status`=`status`|1, `dateUpdate`=now() WHERE ip=%u;", ip);
 
@@ -300,8 +301,6 @@ void dt_parser(void * buffer, int size, struct pqueue * job_queue,struct job_obj
 			char * slash = strstr(temp,"/");
 			if (slash) *slash = 0;
 			//database_insert(temp, ipaddr);
-			if (verbose)
-				printf("Match found %s %s\n",temp,ipaddr);
 			off = regs.end[1];
 		}
 		else break;
@@ -341,8 +340,6 @@ void webhostinfo_parser(void * buffer, int size, struct pqueue * job_queue,struc
 		char temp[4096]; memset(temp,0,sizeof(temp));
 		memcpy(temp,&cbuffer[ovector[2]],ovector[3]-ovector[2]);
 		database_insert(temp, ipaddr);
-		if (verbose)
-			printf("Match found %s\n",temp);
 		off = ovector[1];
 	}
 
@@ -375,8 +372,6 @@ void whoisrequest_parser(void * buffer, int size, struct pqueue * job_queue,stru
 		char temp[4096]; memset(temp,0,sizeof(temp));
 		memcpy(temp,&cbuffer[ovector[2]],ovector[3]-ovector[2]);
 		database_insert(temp, ipaddr);
-		if (verbose)
-			printf("Match found %s\n",temp);
 		off = ovector[1];
 	}
 
@@ -441,7 +436,7 @@ int main(int argc, char **argv) {
 	int web = -1;
 	int force = 0;
 	if (argc == 2 && strcmp(argv[1],"-h") == 0) {
-		fprintf(stderr,"Usage: %s [-r IPstart IPend] [-s webhostinginfo | whoisrequest | all] [-n numworkers]\n", argv[0]);
+		fprintf(stderr,"Usage: %s [-r IPstart IPend] [-s webhostinginfo | whoisrequest | all] [-n numworkers] [-v]\n", argv[0]);
 		exit(0);
 	}
 
@@ -452,7 +447,10 @@ int main(int argc, char **argv) {
 	memset(sql_qbuffer,0,sizeof(sql_qbuffer));
 
 	for (i = 1; i < argc; i++) {
-		if (strcmp(argv[i],"-r") == 0) {
+		if (strcmp(argv[i],"-v") == 0) {
+			verbose = 1;
+		}
+		else if (strcmp(argv[i],"-r") == 0) {
 			if (i+2 >= argc) err = 1;
 			else {
 				inet_aton(argv[i+1], (struct in_addr*)&start_ip);
@@ -461,6 +459,7 @@ int main(int argc, char **argv) {
 				end_ip = ntohl(end_ip);
 				printf("Filtering IPS: %u ... %u\n", start_ip, end_ip);
 				force = 1;
+				i+=2;
 			}
 		}
 		else if (strcmp(argv[i],"-s") == 0) {
@@ -474,12 +473,14 @@ int main(int argc, char **argv) {
 					web = 1;
 				else
 					err = 1;
+				i++;
 			}
 		}
 		else if (strcmp(argv[i],"-n") == 0) {
 			if (i+1 >= argc) err = 1;
 			else {
 				NUM_WORKERS = atoi(argv[i+1]);
+				i++;
 			}
 		}
 	}
