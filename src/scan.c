@@ -78,7 +78,7 @@ struct pseudo_hdr {
 };
 
 #define MAX_TIMEOUT 10    // Max 255!
-#define MAX_OUTSTANDING_QUERIES (1024*64)
+#define MAX_OUTSTANDING_QUERIES (1024*1024*2)
 struct port_query {
 	struct in_addr ip;
 	unsigned short port;
@@ -133,7 +133,8 @@ int main(int argc, char **argv) {
 "                                                    \n"
 "         World Wide Internet Takeover Tool          \n"
 "                    Port scanner                    \n"  );
-	
+
+	printf("Using %d MB \n", sizeof(port_scans)/1024/1024);
 	if (argc < 6) {
 		fprintf(stderr,"Usage: %s IPstart IPend ports{max 32} speed(mbps) device\n", argv[0]);
 		exit(1);
@@ -212,6 +213,10 @@ void mysql_initialize() {
 	if (!server) server = "localhost";
 	
 	mysql_conn = mysql_init(NULL);
+	// Enable auto-reconnect, as some versions do not enable it by default
+	my_bool reconnect = 1;
+	mysql_options(mysql_conn, MYSQL_OPT_RECONNECT, &reconnect);
+
 	/* Connect to database */
 	printf("Connecting to mysqldb...\n");
 	if (!mysql_real_connect(mysql_conn, server, user, password, database, 0, NULL, 0)) {

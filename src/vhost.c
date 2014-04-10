@@ -10,9 +10,11 @@
 #include <arpa/inet.h>
 #include <regex.h>
 #include <pcre.h>
+#include <signal.h>
 #include "pqueue.h"
 
-int verbose = 1;
+int verbose = 0;
+int adder_finish = 0;
 
 // Maximum query size, 1MB
 #define MAX_BUFFER_SIZE   (1024*1024)
@@ -23,8 +25,10 @@ int NUM_WORKERS = DEFAULT_NUM_WORKERS;
 
 MYSQL *mysql_conn_select;
 MYSQL *mysql_conn_update;
-pthread_mutex_t update_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t qinsert_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t ocr_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+char sql_qbuffer[2*1024*1024];
 
 struct job_object;
 typedef void (*callback_fn)(void*,int,struct pqueue*,struct job_object *);
@@ -105,7 +109,8 @@ static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream)
 }
 
 void * worker_thread(void * args) {
-	printf("Spawning thread\n");
+	if (verbose)
+		printf("Spawning thread\n");
 	struct pqueue * q = (struct pqueue*)args;
 	struct job_object * job = pqueue_pop(q);
 	while (job != NULL) {
@@ -137,11 +142,13 @@ void * worker_thread(void * args) {
 
 		curl_easy_cleanup(curl);
 		
+		free(hq.buffer);
 		free(job);
 		job = pqueue_pop(q);
 	}
 	
-	printf("Ending thread\n");
+	if (verbose)
+		printf("Ending thread\n");
 }
 
 struct re_pattern_buffer reg1, reg2, reg3;
@@ -187,27 +194,33 @@ void compile_regexp() {
 	reg7 = pcre_compile (pat7, PCRE_MULTILINE, &error, &erroffset, 0);
 }
 
+void db_flush() {
+	int r = mysql_query(mysql_conn_update, sql_qbuffer);
+	sql_qbuffer[0] = 0;
+	if (r)
+		printf("MYSQL ERROR %s\n", mysql_error(mysql_conn_update));
+}
+
 void database_insert(const char * host, const char * ipaddr) {
 	char tquery[8*1024];
 	struct in_addr in;
 	inet_aton(ipaddr,&in); unsigned int ip = ntohl(in.s_addr);
 
-	pthread_mutex_lock(&update_mutex);
 	if (host) {
 		// Add one host
-		sprintf(tquery, "INSERT INTO `virtualhosts` (`host`) VALUES (LOWER('%s'))", host);
-		mysql_query(mysql_conn_update, tquery);
-	}
-	else
-	{
+		sprintf(tquery, "INSERT IGNORE INTO `virtualhosts` (`host`) VALUES (LOWER('%s'));", host);
+		printf("Found domain %s\n", host);
+	}else
 		// Mark the host as done
-		sprintf(tquery, "UPDATE `hosts` SET `status`=`status`|1, `dateUpdate`=now() WHERE ip=%u", ip);
-		mysql_query(mysql_conn_update, tquery);
-		// Insert the host as vhost too only if port 80 is open (not filtered)
-		//sprintf(tquery, "INSERT INTO `virtualhosts` (`host`) SELECT '%s' WHERE (SELECT COUNT(*) FROM `services` WHERE `port`=80 AND `filtered`=0 AND `ip.. ) ", ipaddr);
-		//mysql_query(mysql_conn_update, tquery);
-	}
-	pthread_mutex_unlock(&update_mutex);
+		sprintf(tquery, "UPDATE `hosts` SET `status`=`status`|1, `dateUpdate`=now() WHERE ip=%u;", ip);
+
+	pthread_mutex_lock(&qinsert_mutex);
+
+	if (strlen(sql_qbuffer) > sizeof(sql_qbuffer)*0.8f)
+		db_flush();
+	
+	strcat(sql_qbuffer, tquery);
+	pthread_mutex_unlock(&qinsert_mutex);
 }
 
 char * decode1(void * buffer, int size);
@@ -288,7 +301,6 @@ void dt_parser(void * buffer, int size, struct pqueue * job_queue,struct job_obj
 			char * slash = strstr(temp,"/");
 			if (slash) *slash = 0;
 			//database_insert(temp, ipaddr);
-			printf("Match found %s %s\n",temp,ipaddr);
 			off = regs.end[1];
 		}
 		else break;
@@ -328,8 +340,6 @@ void webhostinfo_parser(void * buffer, int size, struct pqueue * job_queue,struc
 		char temp[4096]; memset(temp,0,sizeof(temp));
 		memcpy(temp,&cbuffer[ovector[2]],ovector[3]-ovector[2]);
 		database_insert(temp, ipaddr);
-		if (verbose)
-			printf("Match found %s\n",temp);
 		off = ovector[1];
 	}
 
@@ -362,8 +372,6 @@ void whoisrequest_parser(void * buffer, int size, struct pqueue * job_queue,stru
 		char temp[4096]; memset(temp,0,sizeof(temp));
 		memcpy(temp,&cbuffer[ovector[2]],ovector[3]-ovector[2]);
 		database_insert(temp, ipaddr);
-		if (verbose)
-			printf("Match found %s\n",temp);
 		off = ovector[1];
 	}
 
@@ -390,10 +398,15 @@ void mysql_initialize() {
 	char *database = getenv("MYSQL_DB");
 	mysql_conn_select = mysql_init(NULL);
 	mysql_conn_update = mysql_init(NULL);
+	// Enable auto-reconnect, as some versions do not enable it by default
+	my_bool reconnect = 1;
+	mysql_options(mysql_conn_select, MYSQL_OPT_RECONNECT, &reconnect);
+	mysql_options(mysql_conn_update, MYSQL_OPT_RECONNECT, &reconnect);
+
 	/* Connect to database */
 	printf("Connecting to mysqldb...\n");
-	if (mysql_real_connect(mysql_conn_select, server, user, password, database, 0, NULL, 0) == 0|| 
-		mysql_real_connect(mysql_conn_update, server, user, password, database, 0, NULL, 0) == 0 ) {
+	if (mysql_real_connect(mysql_conn_select, server, user, password, database, 0, NULL, CLIENT_MULTI_STATEMENTS) == 0|| 
+		mysql_real_connect(mysql_conn_update, server, user, password, database, 0, NULL, CLIENT_MULTI_STATEMENTS) == 0 ) {
 		fprintf(stderr, "%s\n", mysql_error(mysql_conn_select));
 		fprintf(stderr, "%s\n", mysql_error(mysql_conn_update));
 		fprintf(stderr, "User %s Pass %s Host %s Database %s\n", user, password, server, database);
@@ -402,6 +415,10 @@ void mysql_initialize() {
 	printf("Connected!\n");
 }
 
+void sigterm(int s) {
+	printf("Stopping due to SIGINT/SIGTERM... This will take some seconds, be patient :)\n");
+	adder_finish = 1;
+}
 
 int main(int argc, char **argv) {
 	printf(
@@ -419,31 +436,58 @@ int main(int argc, char **argv) {
 	int web = -1;
 	int force = 0;
 	if (argc == 2 && strcmp(argv[1],"-h") == 0) {
-		fprintf(stderr,"Usage: %s [IPstart IPend] [webhostinginfo | whoisrequest | all]\n", argv[0]);
+		fprintf(stderr,"Usage: %s [-r IPstart IPend] [-s webhostinginfo | whoisrequest | all] [-n numworkers] [-v]\n", argv[0]);
 		exit(0);
 	}
-	else if (argc == 2 || argc == 4) {
-		if (strcmp(argv[argc-1],"all") == 0)
-			web = -1;
-		else if (strcmp(argv[argc-1],"webhostinginfo") == 0)
-			web = 0;
-		else if (strcmp(argv[argc-1],"whoisrequest") == 0)
-			web = 1;
-		else {
-			fprintf(stderr, "Wrong argument %s\n", argv[argc-1]);
-			exit(1);
+
+	int i;
+	int err = 0;
+	unsigned long start_ip =  0;
+	unsigned long end_ip   = ~0;
+	memset(sql_qbuffer,0,sizeof(sql_qbuffer));
+
+	for (i = 1; i < argc; i++) {
+		if (strcmp(argv[i],"-v") == 0) {
+			verbose = 1;
+		}
+		else if (strcmp(argv[i],"-r") == 0) {
+			if (i+2 >= argc) err = 1;
+			else {
+				inet_aton(argv[i+1], (struct in_addr*)&start_ip);
+				inet_aton(argv[i+2], (struct in_addr*)&end_ip);
+				start_ip = ntohl(start_ip);
+				end_ip = ntohl(end_ip);
+				printf("Filtering IPS: %u ... %u\n", start_ip, end_ip);
+				force = 1;
+				i+=2;
+			}
+		}
+		else if (strcmp(argv[i],"-s") == 0) {
+			if (i+1 >= argc) err = 1;
+			else {
+				if (strcmp(argv[i+1],"all") == 0)
+					web = -1;
+				else if (strcmp(argv[i+1],"webhostinginfo") == 0)
+					web = 0;
+				else if (strcmp(argv[i+1],"whoisrequest") == 0)
+					web = 1;
+				else
+					err = 1;
+				i++;
+			}
+		}
+		else if (strcmp(argv[i],"-n") == 0) {
+			if (i+1 >= argc) err = 1;
+			else {
+				NUM_WORKERS = atoi(argv[i+1]);
+				i++;
+			}
 		}
 	}
 
-	unsigned long start_ip =  0;
-	unsigned long end_ip   = ~0;
-	if (argc == 3 || argc == 4) {
-		inet_aton(argv[1], (struct in_addr*)&start_ip);
-		inet_aton(argv[2], (struct in_addr*)&end_ip);
-		start_ip = ntohl(start_ip);
-		end_ip = ntohl(end_ip);
-		printf("Filtering IPS: %u ... %u\n", start_ip, end_ip);
-		force = 1;
+	if (err) {
+		fprintf(stderr, "Wrong arguments! Check help using \"-h\"\n");
+		exit(1);
 	}
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -455,7 +499,6 @@ int main(int argc, char **argv) {
 	struct pqueue job_queue;
 	pqueue_init(&job_queue);
 	pthread_t curl_workers[NUM_WORKERS];
-	int i;
 	for (i = 0; i < NUM_WORKERS; i++)
 		pthread_create (&curl_workers[i], NULL, &worker_thread, &job_queue);
 
@@ -466,6 +509,9 @@ int main(int argc, char **argv) {
 		sprintf(sql_query, "UPDATE `hosts` SET `status`=`status`&(~1) WHERE `ip` >= %u AND `ip` <= %u", start_ip, end_ip);
 		mysql_query(mysql_conn_select, sql_query);
 	}
+
+	signal(SIGTERM, &sigterm);
+	signal(SIGINT, &sigterm);
 	
 	sprintf(sql_query, "SELECT `ip` FROM `hosts` WHERE `status`&1=0 AND `ip` >= %u AND `ip` <= %u", start_ip, end_ip);
 	mysql_query(mysql_conn_select, sql_query);
@@ -490,12 +536,18 @@ int main(int argc, char **argv) {
 			sleep(1);
 
 		printf("%d jobs in the queue\n", pqueue_size(&job_queue));
+
+		if (adder_finish)
+			break;  // Stop it here!
 	}
 	
 	// Now stop all the threads
 	pqueue_release(&job_queue);
 	for (i = 0; i < NUM_WORKERS; i++)
 		pthread_join (curl_workers[i],0);
+
+	// Flush remaining queries to DB
+	db_flush();
 	
 	curl_global_cleanup();
 } 
