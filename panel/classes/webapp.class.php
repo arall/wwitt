@@ -1,48 +1,23 @@
 <?php
-class Service extends Model {
+class WebApp extends Model {
 
 	public $id;
-	public $ip;
-	public $port;
-	public $filtered;
-	public $head;
-	public $protocol;
-	public $product;
+	public $host;
+	public $url;
+	public $name;
 	public $version;
 	public $dateInsert;
 
-	public $statusesCss = array(
-		0 => "success",
-		1 => "danger",
-	);
-	public $statuses = array(
-		0 => "Open",
-		1 => "Filtered",
-	);
-	public static $reservedVarsChild = array("statuses", "statusesCss");
-
 	public function init(){
 		parent::$idField = "id";
-		parent::$dbTable = "services";
+		parent::$dbTable = "webapps";
 		parent::$reservedVarsChild = self::$reservedVarsChild;
-	}
-
-	public function getFilteredString(){
-		return $this->statuses[$this->filtered];
-	}
-
-	public function getFilteredCssString(){
-		return $this->statusesCss[$this->filtered];
 	}
 
 	public static function select($data=array(), $limit=0, $limitStart=0, &$total=null){
 		$db = Registry::getDb();
         //Query
-		$query = "SELECT * FROM `services` WHERE 1=1 ";
-		//Where
-		if($data["ip"]){
-			$query .= " AND `ip`=".(int)$data["ip"];
-		}
+		$query = "SELECT * FROM `webapps` WHERE 1=1 ";
 		//Total
 		if($db->Query($query)){
 			$total = $db->getNumRows();
@@ -63,7 +38,7 @@ class Service extends Model {
 					if($db->getNumRows()){
 						$rows = $db->loadArrayList();
 						foreach($rows as $row){
-							$results[] = new Service($row);
+							$results[] = new WebApp($row);
 						}
 						return $results;
 					}

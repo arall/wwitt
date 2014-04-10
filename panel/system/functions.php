@@ -1,6 +1,6 @@
 <?php
 
-function curl($url, $post=null){
+function curl($url, $post=null, &$code=null){
 	$ch = curl_init($url);
 	curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.11) Gecko/20071127 Firefox/2.0.0.11');
 	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
@@ -11,7 +11,7 @@ function curl($url, $post=null){
 	}
 	$result = curl_exec($ch);
 	curl_close($ch);
-	return $result;	
+	return $result;
 }
 
 function get_between($string,$start,$end){
@@ -40,7 +40,6 @@ function get_between_multi($content,$start,$end){
 
 function get_between_help($end,$r){
    $r = explode($end,$r);
-   return $r[0];   
+   return $r[0];
 }
 
-?>

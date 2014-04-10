@@ -1,12 +1,12 @@
 <?php
 class Host extends Model {
-	
+
 	public $ip;
 	public $ipAdress;
 	public $status;
 	public $dateInsert;
 	public $dateUpdate;
-	
+
 	public $totalServices;
 
 	public $statusesCss = array(
@@ -38,10 +38,10 @@ class Host extends Model {
 			array(
 				"ip" => $this->ip
 			)
-		);	
+		);
 	}
-	
-	public function select($data=array(), $limit=0, $limitStart=0, &$total=null){
+
+	public static function select($data=array(), $limit=0, $limitStart=0, &$total=null){
 		$db = Registry::getDb();
         //Query
 		$query = "SELECT * FROM `viewHosts` WHERE 1=1 ";

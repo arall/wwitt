@@ -1,6 +1,6 @@
 <?php
 class VirtualHost extends Model {
-	
+
 	public $host;
 	public $status;
 	public $url;
@@ -8,7 +8,7 @@ class VirtualHost extends Model {
 	public $index;
 	public $robots;
 	public $dateInsert;
-	
+
 	public $statusesCss = array(
 		0 => "danger",
 		1 => "success",
@@ -32,8 +32,8 @@ class VirtualHost extends Model {
 	public function getStatusCssString(){
 		return $this->statusesCss[$this->status];
 	}
-	
-	public function select($data=array(), $limit=0, $limitStart=0, &$total=null){
+
+	public static function select($data=array(), $limit=0, $limitStart=0, &$total=null){
 		$db = Registry::getDb();
         //Query
 		$query = "SELECT * FROM `virtualhosts` WHERE 1=1 ";
@@ -139,7 +139,7 @@ class VirtualHost extends Model {
 					if(strstr($index, "&copy; phpBB Group"))
 						$info['cms']['name'] = "phpbb";
 				}
-				
+
 			}
 			//Got cms-name?
 			if($info['cms']['name']){
@@ -203,7 +203,7 @@ class VirtualHost extends Model {
 		}
 	}
 
-	function getVBulletinVersion($index=null){
+	public function getVBulletinVersion($index=null){
 		if(!$index){
 			$index = $this->index;
 		}
@@ -218,7 +218,7 @@ class VirtualHost extends Model {
 		/* TO DO */
 	}
 
-	function getWordpressVersion($index=null){
+	public function getWordpressVersion($index=null){
 		if(!$index){
 			$index = $this->index;
 		}
@@ -228,7 +228,7 @@ class VirtualHost extends Model {
 		/* TO DO */
 	}
 
-	function getDrupalVersion(){
+	public function getDrupalVersion(){
 		//http://drupal.org/node/27362
 		//Changelog
 		$changelog = curl($this->url."/CHANGELOG.txt");
@@ -243,7 +243,7 @@ class VirtualHost extends Model {
 		/* TO DO */
 	}
 
-	function getJoomlaVersion($index=null){
+	public function getJoomlaVersion($index=null){
 		if(!$index){
 			$index = $this->index;
 		}

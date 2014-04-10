@@ -1,6 +1,6 @@
 <?php
 class VulnHost extends Model {
-	
+
 	public $id;
 	public $ip;
 	public $host;
@@ -27,7 +27,7 @@ class VulnHost extends Model {
 
 	public function getVulnHostByVulnIpPortHost($ip=null, $port=null, $host=null){
 		$db = Registry::getDb();
-		$query = "SELECT * FROM `vulns_hosts` WHERE `ip`='".mysql_real_escape_string($ip)."' 
+		$query = "SELECT * FROM `vulns_hosts` WHERE `ip`='".mysql_real_escape_string($ip)."'
 		AND `port`='".mysql_real_escape_string($port)."' AND `host`='".mysql_real_escape_string($host)."'";
 		if($db->query($query)){
 			if($db->getNumRows()){
@@ -37,7 +37,7 @@ class VulnHost extends Model {
 		}
 	}
 
-	public function select($data=array(), $limit=0, $limitStart=0, &$total=null){
+	public static function select($data=array(), $limit=0, $limitStart=0, &$total=null){
 		$db = Registry::getDb();
         //Query
 		$query = "SELECT * FROM `vulns_hosts` WHERE 1=1 ";

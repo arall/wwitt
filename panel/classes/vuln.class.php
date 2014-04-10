@@ -1,6 +1,6 @@
 <?php
 class Vuln extends Model {
-	
+
 	public $module;
 	public $name;
 	public $type;
@@ -34,7 +34,7 @@ class Vuln extends Model {
 		return false;
 	}
 
-	public function select($data=array(), $limit=0, $limitStart=0, &$total=null){
+	public static function select($data=array(), $limit=0, $limitStart=0, &$total=null){
 		$db = Registry::getDb();
         //Query
 		$query = "SELECT * FROM `vulns` WHERE 1=1 ";

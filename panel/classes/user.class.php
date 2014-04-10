@@ -52,7 +52,7 @@ class User extends Model {
 		}
 	}
 
-	public function logout(){
+	public static function logout(){
 		session_start();
 		$_SESSION = array();
 		session_unset();
@@ -60,11 +60,11 @@ class User extends Model {
 		return true;
 	}
 
-	public function encrypt($password=""){
+	public static function encrypt($password=""){
 		return md5(sha1(trim($password)));
 	}
 
-	public function select($data=array(), $limit=0, $limitStart=0, &$total=null){
+	public static function select($data=array(), $limit=0, $limitStart=0, &$total=null){
 		$db = Registry::getDb();
         //Query
 		$query = "SELECT * FROM `users` WHERE 1=1 ";

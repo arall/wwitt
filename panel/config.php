@@ -1,5 +1,5 @@
 <?php
-//PHP 
+//PHP
 error_reporting(E_ERROR | E_WARNING | E_PARSE);
 ini_set('display_errors', 1);
 date_default_timezone_set('Europe/Madrid');
@@ -31,6 +31,9 @@ $_config['path'] = dirname(__FILE__);
 $_config['host'] = $_SERVER["SERVER_NAME"];
 $_config['dir'] = str_replace("index.php","",$_SERVER["SCRIPT_NAME"]);
 $_config['url'] = "http://".$_config['host'].$_config['dir'];
+
+//WWITT
+$_config['tmpPath'] = $_config['path']."/tmp/";
 
 //Functions
 function print_pre($array="", $return=false){

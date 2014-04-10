@@ -28,7 +28,7 @@
 //
 // The callback should take four arguments. The first is a string containing the content found at
 // the URL. The second is the original URL requested, the third is the curl handle of the request that
-// can be queried to get the results, and the fourth is the arbitrary 'cookie' value that you 
+// can be queried to get the results, and the fourth is the arbitrary 'cookie' value that you
 // associated with this object. This cookie contains user-defined data.
 //
 // By Pete Warden <pete@petewarden.com>, freely reusable, see http://petewarden.typepad.com for more
@@ -40,15 +40,15 @@ class ParallelCurl {
 
     public $outstanding_requests;
     public $multi_handle;
-    
+
     public function __construct($in_max_requests = 10, $in_options = array()) {
         $this->max_requests = $in_max_requests;
         $this->options = $in_options;
-        
+
         $this->outstanding_requests = array();
         $this->multi_handle = curl_multi_init();
     }
-    
+
     //Ensure all the requests finish nicely
     public function __destruct() {
     	$this->finishAllRequests();
@@ -59,7 +59,7 @@ class ParallelCurl {
     public function setMaxRequests($in_max_requests) {
         $this->max_requests = $in_max_requests;
     }
-    
+
     // Sets the options to pass to curl, using the format of curl_setopt_array()
     public function setOptions($in_options) {
 
@@ -73,7 +73,7 @@ class ParallelCurl {
 
 		if( $this->max_requests > 0 )
 	        $this->waitForOutstandingRequestsToDropBelow($this->max_requests);
-    
+
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
         curl_setopt_array($ch, $this->options);
@@ -87,9 +87,9 @@ class ParallelCurl {
         if(isset($auth)){
             curl_setopt($ch, CURLOPT_USERPWD, $auth);
         }
-        
+
         curl_multi_add_handle($this->multi_handle, $ch);
-        
+
         $ch_array_key = (int)$ch;
 
         $this->outstanding_requests[$ch_array_key] = array(
@@ -97,10 +97,10 @@ class ParallelCurl {
             'callback' => $callback,
             'user_data' => $user_data,
         );
-        
+
         $this->checkForCompletedRequests();
     }
-    
+
     // You *MUST* call this function at the end of your script. It waits for any running requests
     // to complete, and calls their callback functions
     public function finishAllRequests() {
@@ -113,7 +113,7 @@ class ParallelCurl {
         // Call select to see if anything is waiting for us
         if (curl_multi_select($this->multi_handle, 0.0) === -1)
             return;
-        
+
         // Since something's waiting, give curl a chance to process it
         do {
             $mrc = curl_multi_exec($this->multi_handle, $active);
@@ -133,34 +133,34 @@ class ParallelCurl {
 		else
 			return;
 	}
-		
+
         // Now grab the information about the completed requests
         while ($info = curl_multi_info_read($this->multi_handle)) {
-        
+
             $ch = $info['handle'];
             $ch_array_key = (int)$ch;
-            
+
             if (!isset($this->outstanding_requests[$ch_array_key])) {
                 die("Error - handle wasn't found in requests: '$ch' in ".
                     print_r($this->outstanding_requests, true));
             }
-            
+
             $request = $this->outstanding_requests[$ch_array_key];
 
             $url = $request['url'];
             $content = curl_multi_getcontent($ch);
             $callback = $request['callback'];
             $user_data = $request['user_data'];
-            
+
             call_user_func($callback, $content, $url, $ch, $user_data);
-            
+
             unset($this->outstanding_requests[$ch_array_key]);
-            
+
             curl_multi_remove_handle($this->multi_handle, $ch);
         }
-    
+
     }
-    
+
     // Blocks until there's less than the specified number of requests outstanding
     private function waitForOutstandingRequestsToDropBelow($max)
     {
@@ -168,12 +168,10 @@ class ParallelCurl {
             $this->checkForCompletedRequests();
             if (count($this->outstanding_requests)<$max)
             	break;
-            
+
             usleep(10000);
         }
     }
 
 }
 
-
-?>
