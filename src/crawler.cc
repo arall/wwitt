@@ -222,9 +222,10 @@ int main(int argc, char **argv) {
 	signal(SIGPIPE, SIG_IGN);
 	mysql_initialize();
 	
+	// Status indicates whether we tried to fetch them or not
 	// Clear "inflight flag"
-	mysql_query(mysql_conn_update,"UPDATE `virtualhosts` SET `status`=`status`&(~1)");
-	mysql_query(mysql_conn_update,"UPDATE `services` SET `status`=`status`&(~1)");
+	//mysql_query(mysql_conn_update,"UPDATE `virtualhosts` SET `status`=`status`&(~1)");
+	//mysql_query(mysql_conn_update,"UPDATE `services` SET `status`=`status`&(~1)");
 	
 	// Start!
 	pthread_t db;
@@ -239,25 +240,23 @@ int main(int argc, char **argv) {
 			pthread_create (&curl_workers[i], NULL, &curl_dispatcher, (void*)(uintptr_t)i);
 	}
 
+	int db_end = 0;
 	int num_active = 0;	
 	// Infinite loop: query IP/Domain blocks
-	const char * query = "SELECT DISTINCT `host` FROM `virtualhosts` WHERE (`head` IS null OR `index` IS null) AND `status`&1 = 0";
-	if (bannercrawl) query = "SELECT `ip`, `port` FROM `services` WHERE `head` IS null AND `status`&1 = 0";
-	while (1) {
+	const char * query = "SELECT `host` FROM `virtualhosts` WHERE (`head` IS null OR `index` IS null)";
+	if (bannercrawl) query = "SELECT `ip`, `port` FROM `services` WHERE `head` IS null";
+	mysql_query(mysql_conn_select, query);
+	MYSQL_RES *result = mysql_store_result(mysql_conn_select);
+	
+	while (result) {
 		// Generate queries and generate new connections
-		if (num_active < max_inflight) {
-			mysql_query(mysql_conn_select, query);
-			MYSQL_RES *result = mysql_store_result(mysql_conn_select);
-			if (!result) break;
-			
-			int num_rem = mysql_num_rows(result);
-			if (num_rem == 0 && num_active == 0) break; // End!
-			
-			printf("\rNum active: %d Remaining: %d ...   ",num_active, num_rem); fflush(stdout);
+		if (num_active < max_inflight && !db_end) {
+			printf("\rNum active: %d ...   ",num_active); fflush(stdout);
 
-			int injected = 0;		
+			db_end = 1;
+			int injected = num_active;
 			MYSQL_ROW row;
-			while ((row = mysql_fetch_row(result)) && injected++ < max_inflight) {
+			while ((row = mysql_fetch_row(result))) {
 				struct connection_query cquery;
 				cquery.ip = 0;
 				cquery.retries = cquery.redirs = 0;
@@ -292,12 +291,13 @@ int main(int argc, char **argv) {
 				for (i = 0; i < MAX_OUTSTANDING_QUERIES; i++) {
 					if (connection_table[i].status == reqEmpty) {
 						connection_table[i] = cquery;
+						db_end = 0;
 						break;
 					}
 				}
 				
 				// Mark it as in process
-				if (!bannercrawl) {
+				/*if (!bannercrawl) {
 					char upq[2048];
 					sprintf(upq,"UPDATE `virtualhosts` SET `status`=`status`|1 WHERE `host`=\"%s\"", row[0]);
 					mysql_query(mysql_conn_update2,upq);
@@ -306,6 +306,11 @@ int main(int argc, char **argv) {
 					char upq[2048];
 					sprintf(upq,"UPDATE `services` SET `status`=`status`|1 WHERE `ip`=\"%s\" AND `port`=\"%s\"", row[0], row[1]);
 					mysql_query(mysql_conn_update2,upq);				
+				}*/
+				
+				if (injected++ < max_inflight) {
+					db_end = 0; // Enough for now, DB has still records though
+					break;
 				}
 			}
 		}
@@ -595,7 +600,7 @@ void * database_dispatcher(void * args) {
 					if (bannercrawl) {
 						char tempb[cquery->received*2+2];
 						mysql_real_escape_string(mysql_conn_update, tempb, cquery->inbuffer, cquery->received);
-						sprintf(sql_query,"UPDATE `services` SET `head`='%s',`status`=`status`&(~1) WHERE `ip`=%d AND `port`=%d\n",
+						sprintf(sql_query,"UPDATE `services` SET `head`='%s' WHERE `ip`=%d AND `port`=%d\n",
 							tempb, cquery->ip, cquery->port);
 					}else{
 						int eflag = cquery->status == reqCompleteError ? 0x80 : 0;
@@ -610,7 +615,7 @@ void * database_dispatcher(void * args) {
 						std::string hostname = mysql_real_escape_std_string(mysql_conn_update,cquery->vhost);
 						std::string url      = mysql_real_escape_std_string(mysql_conn_update,cquery->url);
 
-						sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=(`status`&(~1))|%d WHERE `ip`=%d AND `host`=\"%s\";", tempb_, tempb, url.c_str(), eflag, cquery->ip, hostname.c_str());
+						sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=`status`|%d WHERE `ip`=%d AND `host`=\"%s\";", tempb_, tempb, url.c_str(), eflag, cquery->ip, hostname.c_str());
 					}
 					num_processed++;
 					if (mysql_query(mysql_conn_update,sql_query)) {
