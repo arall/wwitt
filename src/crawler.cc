@@ -97,7 +97,6 @@ struct pollfd poll_desc[MAX_OUTSTANDING_QUERIES];
 
 MYSQL *mysql_conn_select = 0;
 MYSQL *mysql_conn_update = 0;
-MYSQL *mysql_conn_update2 = 0;
 
 void * database_dispatcher(void * args);
 void * dns_dispatcher(void * args);
@@ -516,7 +515,6 @@ void mysql_initialize() {
 	printf("Connecting to mysqldb...\n");
 	db_reconnect(&mysql_conn_select);
 	db_reconnect(&mysql_conn_update);
-	db_reconnect(&mysql_conn_update2);
 	printf("Connected!\n");
 }
 
@@ -630,6 +628,10 @@ void * database_dispatcher(void * args) {
 	unsigned long long num_processed = 0;
 	
 	connection_query * cquery = (connection_query*)pqueue_pop(&completed_queries);
+	
+	// Use big transactions: Commit on empty queue or 100 sql queries
+	int num_tr = 0;
+	mysql_query(mysql_conn_update, "START TRANSACTION");
 
 	while (cquery) {
 		assert(cquery->status == reqComplete || cquery->status == reqCompleteError);
@@ -699,9 +701,17 @@ void * database_dispatcher(void * args) {
 			clean_entry(cquery);
 			num_completed++;  // Allow one more to come in
 		}
+				
+		if (num_tr++ > 100 || pqueue_size(&completed_queries) == 0) {
+			num_tr = 0;
+			mysql_query(mysql_conn_update, "COMMIT");
+			mysql_query(mysql_conn_update, "START TRANSACTION");
+		}
 		
 		cquery = (connection_query*)pqueue_pop(&completed_queries);
 	}
+	
+	mysql_query(mysql_conn_update, "COMMIT");
 	
 	printf("End of crawl, quitting!\n");
 	printf("Inserted %llu registers\n", num_processed);
@@ -733,6 +743,7 @@ void * curl_dispatcher(void * args) {
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
 		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_fwrite);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &hq);
 		curl_easy_setopt(curl, CURLOPT_URL, cquery->url.c_str());
