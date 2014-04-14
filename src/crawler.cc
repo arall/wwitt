@@ -80,7 +80,7 @@ volatile int adder_finish = 0;
 
 int max_inflight = 100;
 int max_dns_inflight = 50;
-int max_curl_inflight = 1;
+int max_curl_inflight = 5;
 
 int setNonblocking(int fd) {
 	int flags;
@@ -396,6 +396,12 @@ int main(int argc, char **argv) {
 				poll_desc[num_active].fd = cq->socket;
 				poll_desc[num_active].events = mask;
 				poll_desc[num_active].revents = 0;
+				
+			}
+			if (cq->status == reqConnecting || cq->status == reqTransfer ||
+				cq->status == reqDnsQuery || cq->status == reqDnsQuerying ||
+				cq->status == reqCurl || cq->status == reqCurlTransfer) {
+				
 				num_active++;
 			}
 		}
@@ -681,6 +687,7 @@ void * curl_dispatcher(void * args) {
 				else
 					cquery->status = reqError;
 
+				free(hq.buffer);
 				curl_easy_cleanup(curl);
 			}
 		}
