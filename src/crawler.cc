@@ -390,9 +390,8 @@ int main(int argc, char **argv) {
 						cq->status = reqError;
 				}
 
-				int mask = POLLERR;
-				mask |= (cq->tosend_offset < cq->tosend_max) ? POLLOUT : 0;
-				mask |= POLLIN;
+				int mask = POLLIN;
+				mask |= (cq->tosend_offset < cq->tosend_max) ? (POLLOUT|POLLERR) : 0;
 
 				poll_desc[num_active].fd = cq->socket;
 				poll_desc[num_active].events = mask;
