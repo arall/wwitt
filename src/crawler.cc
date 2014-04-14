@@ -558,7 +558,7 @@ void * dns_dispatcher(void * args) {
 
 // Walk the table from time to time and insert results into the database
 void * database_dispatcher(void * args) {
-	uintptr_t bannercrawl = (uintptr_t)args;
+	int bannercrawl = *(int*)args;
 	char sql_query[BUFSIZE*2];
 	unsigned long long num_processed = 0;
 
