@@ -615,7 +615,7 @@ void * database_dispatcher(void * args) {
 						std::string hostname = mysql_real_escape_std_string(mysql_conn_update,cquery->vhost);
 						std::string url      = mysql_real_escape_std_string(mysql_conn_update,cquery->url);
 
-						sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=`status`|%d WHERE  `host`=\"%s\";", tempb_, tempb, url.c_str(), eflag, cquery->ip, hostname.c_str());
+						sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=`status`|%d WHERE  `host`=\"%s\";", tempb_, tempb, url.c_str(), eflag, hostname.c_str());
 					}
 					num_processed++;
 					if (mysql_query(mysql_conn_update,sql_query)) {
