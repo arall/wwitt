@@ -687,7 +687,6 @@ void * curl_dispatcher(void * args) {
 				else
 					cquery->status = reqError;
 
-				free(hq.buffer);
 				curl_easy_cleanup(curl);
 			}
 		}
