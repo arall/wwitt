@@ -751,7 +751,7 @@ void * curl_dispatcher(void * args) {
 		}
 		else {
 			cquery->status = reqError;
-			pqueue_push(&completed_queries, cquery);
+			pqueue_push(&new_queries, cquery);
 		}
 
 		curl_easy_cleanup(curl);
