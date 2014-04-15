@@ -27,13 +27,13 @@
 #include <sys/resource.h>
 #include "pqueue.h" 
 
-#define BUFSIZE (1024*1024)   // maximum size of any datagram(16 bits the size of identifier)
+#define BUFSIZE (1024*1024)   // Maximum content size to gather
 #define TRUE 1
 #define FALSE 0
 #define default_low  1
 #define default_high 1024
 
-#define READBUF_CHUNK 4096
+#define READBUF_CHUNK (16*1024)
 
 #define MAX_TIMEOUT 10   // In seconds
 #define MAX_RETRIES 10
@@ -624,7 +624,7 @@ void * dns_dispatcher(void * args) {
 // Walk the table from time to time and insert results into the database
 void * database_dispatcher(void * args) {
 	int bannercrawl = *(int*)args;
-	char sql_query[BUFSIZE*2];
+	char sql_query[BUFSIZE*3];
 	unsigned long long num_processed = 0;
 	
 	connection_query * cquery = (connection_query*)pqueue_pop(&completed_queries);
@@ -744,6 +744,7 @@ void * curl_dispatcher(void * args) {
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
 		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
 		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
+		curl_easy_setopt(curl, CURLOPT_TIMEOUT , MAX_TIMEOUT);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_fwrite);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &hq);
 		curl_easy_setopt(curl, CURLOPT_URL, cquery->url.c_str());
@@ -779,14 +780,15 @@ void * curl_dispatcher(void * args) {
 static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream) {
 	struct http_query * q = (struct http_query *)stream;
 
-	q->buffer = (char*)realloc(q->buffer, size*nmemb + q->received + 32);
+	size_t newsize = q->received + size*nmemb;
+	if (newsize >= BUFSIZE)
+		return -1;  // Buffer full, sorry
+
+	q->buffer = (char*)realloc(q->buffer, newsize + 32);
 	char *bb = q->buffer;
 
 	memcpy(&bb[q->received], buffer, size*nmemb);
 	q->received += size*nmemb;
-
-	//if (q->received > MAX_BUFFER_SIZE)
-	//	return -1;  // Ops!
 
 	return size*nmemb;
 }
