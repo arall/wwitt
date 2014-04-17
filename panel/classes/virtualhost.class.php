@@ -12,10 +12,12 @@ class VirtualHost extends Model {
 	public $statusesCss = array(
 		0 => "danger",
 		1 => "success",
+		2 => "success",
 	);
 	public $statuses = array(
 		0 => "Not crawled",
 		1 => "Crawled",
+		2 => "CMSID",
 	);
 	public static $reservedVarsChild = array("statusesCss", "statuses");
 
@@ -37,6 +39,10 @@ class VirtualHost extends Model {
 		$db = Registry::getDb();
         //Query
 		$query = "SELECT * FROM `virtualhosts` WHERE 1=1 ";
+		//Where
+		if($data["status"]){
+			$query .= " AND status=".(int)$data["status"];
+		}
 		//Total
 		if($db->Query($query)){
 			$total = $db->getNumRows();
