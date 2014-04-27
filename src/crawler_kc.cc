@@ -47,7 +47,7 @@ void db_update_vhost(const std::string & vhost, const std::string & url,
 		char t = 0;
 		db.set(vhost.c_str(), vhost.size(), &t, 1);
 	}else{
-		char * tempb = malloc(body_len + head_len + 4);
+		char * tempb = (char*)malloc(body_len + head_len + 4);
 		memcpy(tempb,              head_ptr,   head_len);
 		memcpy(&tempb[head_len],   "\r\n\r\n", 4       );
 		memcpy(&tempb[head_len+4], body_ptr,   body_len);
