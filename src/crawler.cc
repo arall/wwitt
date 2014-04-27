@@ -22,12 +22,11 @@
 #include <signal.h>
 #include <pthread.h>
 #include <semaphore.h>
-#include <mysql.h>
-#include <errmsg.h>
 #include <sys/resource.h>
-#include "pqueue.h" 
+#include "pqueue.h"
+#include "crawler.h"
+#include "crawler_mysql.h"
 
-#define BUFSIZE (1024*1024)   // Maximum content size to gather
 #define TRUE 1
 #define FALSE 0
 #define default_low  1
@@ -57,6 +56,7 @@ struct connection_query {
 	RequestsStatus status;
 	unsigned char retries;
 	unsigned char redirs;
+	unsigned char dechunked;
 	
 	std::string vhost;
 	std::string url;
@@ -95,13 +95,9 @@ connection_query connection_table[MAX_OUTSTANDING_QUERIES];
 
 struct pollfd poll_desc[MAX_OUTSTANDING_QUERIES];
 
-MYSQL *mysql_conn_select = 0;
-MYSQL *mysql_conn_update = 0;
-
 void * database_dispatcher(void * args);
 void * dns_dispatcher(void * args);
 void * curl_dispatcher(void * args);
-void mysql_initialize();
 
 #define CONNECT_ERR(ret) (ret < 0 && errno != EINPROGRESS && errno != EALREADY && errno != EISCONN)
 #define CONNECT_OK(ret) (ret >= 0 || (ret < 0 && (errno == EISCONN || errno == EALREADY)))
@@ -126,12 +122,6 @@ int setNonblocking(int fd) {
 	flags = 1;
 	return ioctl(fd, FIOBIO, &flags);
 #endif
-}
-
-std::string mysql_real_escape_std_string(MYSQL * c, const std::string s) {
-	char tempb[s.size()*2+2];
-	mysql_real_escape_string(c, tempb, s.c_str(), s.size());
-	return std::string(tempb);
 }
 
 std::string generateHTTPQuery(const std::string vhost, const std::string path) {
@@ -248,8 +238,7 @@ int main(int argc, char **argv) {
 		clean_entry(&connection_table[i]);
 	
 	signal(SIGPIPE, SIG_IGN);
-	mysql_initialize();
-	
+	db_initialize();
 	
 	// Init queues
 	pqueue_init(&new_queries);
@@ -273,10 +262,7 @@ int main(int argc, char **argv) {
 
 	int db_end = 0;
 	// Infinite loop: query IP/Domain blocks
-	const char * query = "SELECT `host` FROM `virtualhosts` WHERE (`head` IS null OR `index` IS null)";
-	if (bannercrawl) query = "SELECT `ip`, `port` FROM `services` WHERE `head` IS null";
-	mysql_query(mysql_conn_select, query);
-	MYSQL_RES *result = mysql_store_result(mysql_conn_select);
+	db_query(bannercrawl);
 	
 	// Do this while DB has data and we have inflight requests
 	while (num_queued != num_completed || !db_end) {
@@ -294,12 +280,12 @@ int main(int argc, char **argv) {
 			//printf("\rAdding more jobs to queue, num active: %lld ...   ", na); fflush(stdout);
 
 			db_end = 1;
-			MYSQL_ROW row;
-			while ((row = mysql_fetch_row(result))) {
+			std::vector <std::string> row;
+			while (db_next(row, bannercrawl)) {
 				db_end = 0;
 				struct connection_query cquery;
 				cquery.ip = 0;
-				cquery.retries = cquery.redirs = 0;
+				cquery.retries = cquery.redirs = cquery.dechunked = 0;
 				cquery.tosend_max = cquery.tosend_offset = 0;
 				cquery.received = 0;
 				cquery.inbuffer = (char*)malloc(READBUF_CHUNK+32);
@@ -313,10 +299,10 @@ int main(int argc, char **argv) {
 				setNonblocking(cquery.socket);
 			
 				if (bannercrawl) {
-					cquery.ip = atoi(row[0]);
-					cquery.port = atoi(row[1]);
+					cquery.ip = atoi(row[0].c_str());
+					cquery.port = atoi(row[1].c_str());
 				}else{
-					std::string vhost = std::string(row[0]);
+					std::string vhost = row[0];
 					cquery.outbuffer = strdup(generateHTTPQuery(vhost,"/").c_str());
 					cquery.tosend_max = strlen(cquery.outbuffer);
 					cquery.port = 80;
@@ -480,7 +466,6 @@ int main(int argc, char **argv) {
 	pqueue_release(&curl_queries);
 	pqueue_release(&completed_queries);
 	adder_finish = 1;
-	mysql_close(mysql_conn_select);
 	
 	pthread_join(db, NULL);
 	if (!bannercrawl) {
@@ -489,33 +474,8 @@ int main(int argc, char **argv) {
 		for (int i = 0; i < max_curl_inflight; i++)
 			pthread_join (curl_workers[i], NULL);
 	}
-}
-
-void db_reconnect(MYSQL ** c) {
-	if (*c)
-		mysql_close(*c);
-
-	char *server = getenv("MYSQL_HOST");
-	char *user = getenv("MYSQL_USER");
-	char *password = getenv("MYSQL_PASS");
-	char *database = getenv("MYSQL_DB");
 	
-	*c = mysql_init(NULL);
-	// Eanble auto-reconnect, as some versions do not enable it by default
-	my_bool reconnect = 1;
-	mysql_options(*c, MYSQL_OPT_RECONNECT, &reconnect);
-	if (!mysql_real_connect(*c, server, user, password, database, 0, NULL, 0)) {
-		fprintf(stderr, "User %s Pass %s Host %s Database %s\n", user, password, server, database);
-		exit(1);
-	}
-}
-
-void mysql_initialize() {
-	/* Connect to database */
-	printf("Connecting to mysqldb...\n");
-	db_reconnect(&mysql_conn_select);
-	db_reconnect(&mysql_conn_update);
-	printf("Connected!\n");
+	db_finish();
 }
 
 void separate_body(char * buffer, int size, char ** buf1, char ** buf2, int * len1, int * len2) {
@@ -631,13 +591,14 @@ void * database_dispatcher(void * args) {
 	
 	// Use big transactions: Commit on empty queue or 100 sql queries
 	int num_tr = 0;
-	mysql_query(mysql_conn_update, "START TRANSACTION");
+	db_transaction(true);
 
 	while (cquery) {
 		assert(cquery->status == reqComplete || cquery->status == reqCompleteError);
 
 		// Analyze the response, maybe we find some redirects
-		dechunk_http(cquery->inbuffer,&cquery->received);
+		if (!cquery->dechunked)
+			dechunk_http(cquery->inbuffer,&cquery->received);
 		std::string newloc = parse_response((char*)cquery->inbuffer, cquery->received, cquery->url);
 		
 		if (newloc != "" && cquery->redirs < MAX_REDIRS && !bannercrawl) {
@@ -668,32 +629,15 @@ void * database_dispatcher(void * args) {
 		}
 		else{
 			if (bannercrawl) {
-				char tempb[cquery->received*2+2];
-				mysql_real_escape_string(mysql_conn_update, tempb, cquery->inbuffer, cquery->received);
-				sprintf(sql_query,"UPDATE `services` SET `head`='%s' WHERE `ip`=%lu AND `port`=%d\n",
-					tempb, cquery->ip, cquery->port);
+				db_update_service(cquery->ip, cquery->port, cquery->inbuffer, cquery->received);
 			}else{
 				int eflag = cquery->status == reqCompleteError ? 0x80 : 0;
-				char tempb [cquery->received*2+2];
-				char tempb_[cquery->received*2+2];
 				int len1, len2; char *p1, *p2;
 				separate_body(cquery->inbuffer, cquery->received, &p1, &p2, &len1, &len2);
 
-				mysql_real_escape_string(mysql_conn_update, tempb,  p1, len1);
-				mysql_real_escape_string(mysql_conn_update, tempb_, p2, len2);
-
-				std::string hostname = mysql_real_escape_std_string(mysql_conn_update,cquery->vhost);
-				std::string url      = mysql_real_escape_std_string(mysql_conn_update,cquery->url);
-
-				sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=`status`|%d WHERE  `host`=\"%s\";", tempb_, tempb, url.c_str(), eflag, hostname.c_str());
+				db_update_vhost(cquery->vhost, cquery->url, p2, len2, p1, len1, eflag);
 			}
 			num_processed++;
-			if (mysql_query(mysql_conn_update,sql_query)) {
-				if (mysql_errno(mysql_conn_update) == CR_SERVER_GONE_ERROR) {
-					printf("Reconnect due to connection drop\n");
-					db_reconnect(&mysql_conn_update);
-				}
-			}
 			if (verbose)
 				std::cout << "Completed " << cquery->url << std::endl;
 
@@ -704,19 +648,17 @@ void * database_dispatcher(void * args) {
 				
 		if (num_tr++ > 100 || pqueue_size(&completed_queries) == 0) {
 			num_tr = 0;
-			mysql_query(mysql_conn_update, "COMMIT");
-			mysql_query(mysql_conn_update, "START TRANSACTION");
+			db_transaction(false); db_transaction(true);
 		}
 		
 		cquery = (connection_query*)pqueue_pop(&completed_queries);
 	}
 	
-	mysql_query(mysql_conn_update, "COMMIT");
+	db_transaction(false);
 	
 	printf("End of crawl, quitting!\n");
 	printf("Inserted %llu registers\n", num_processed);
 
-	mysql_close(mysql_conn_update);
 	return 0;
 }
 
@@ -743,6 +685,7 @@ void * curl_dispatcher(void * args) {
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
 		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+		curl_easy_setopt(curl, CURLOPT_HEADER, 1);
 		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 		curl_easy_setopt(curl, CURLOPT_TIMEOUT , MAX_TIMEOUT);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_fwrite);
@@ -759,6 +702,7 @@ void * curl_dispatcher(void * args) {
 
 		if(CURLE_OK == res) {
 			cquery->status = reqComplete;
+			cquery->dechunked = 1;
 			pqueue_push(&completed_queries, cquery);
 		}
 		else {
