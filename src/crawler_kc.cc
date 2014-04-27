@@ -43,7 +43,18 @@ void db_update_service(unsigned long ip, unsigned short port, const char * data,
 void db_update_vhost(const std::string & vhost, const std::string & url, 
 	const char * head_ptr, int head_len, const char * body_ptr, int body_len, int eflag) {
 	
-	db.set(vhost.c_str(), vhost.size(), body_ptr, body_len);
+	if (head_len+body_len == 0) {
+		char t = 0;
+		db.set(vhost.c_str(), vhost.size(), &t, 1);
+	}else{
+		char * tempb = malloc(body_len + head_len + 4);
+		memcpy(tempb,              head_ptr,   head_len);
+		memcpy(&tempb[head_len],   "\r\n\r\n", 4       );
+		memcpy(&tempb[head_len+4], body_ptr,   body_len);
+		
+		db.set(vhost.c_str(), vhost.size(), tempb, body_len + head_len + 4);
+		free(tempb);
+	}
 }
 
 void db_transaction(bool start) {
