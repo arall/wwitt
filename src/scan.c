@@ -110,7 +110,7 @@ int sockfd;
 struct in_addr current_ip;
 
 int maxpp;
-int total_ips, total_ports;
+unsigned int total_ips, total_ports;
 int portlist[32];
 volatile int adder_finish = 0;
 
@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
 		inet_aton(argv[2], &last_ip);
 		total_ips = ntohl(last_ip.s_addr) - ntohl(current_ip.s_addr);
 		
-		printf("Staring to scan %d ip addresses and %d ports per address at %d KBps\n", total_ips, total_ports, KBps);
+		printf("Staring to scan %u ip addresses and %d ports per address at %d KBps\n", total_ips, total_ports, KBps);
 	}
 	
 	if( pcap_findalldevs( &alldevsp , errbuf) < 0 ) {
