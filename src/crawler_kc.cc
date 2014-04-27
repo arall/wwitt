@@ -1,0 +1,53 @@
+
+#include <iostream>
+#include <vector>
+#include <string>
+#include <unistd.h>
+#include <kcpolydb.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include "crawler.h"
+
+kyotocabinet::PolyDB db;
+
+void db_initialize() {
+	char *file = getenv("KC_DB");
+	if (!db.open(file, kyotocabinet::PolyDB::OWRITER | kyotocabinet::PolyDB::OCREATE)) {
+	    std::cerr << "DB open error: " << db.error().name() << std::endl;
+		exit(1);
+	}
+}
+
+kyotocabinet::DB::Cursor* cur = NULL;
+void db_query(bool bannercrawl) {
+	cur = db.cursor();
+	cur->jump();
+}
+
+bool db_next(std::vector <std::string> & resultset, bool bannercrawl) {
+	resultset.clear();
+	std::string key;
+
+	if (!cur->get_key(&key, true))
+		return false;
+  
+	resultset.push_back(key);
+	return true;
+}
+
+void db_update_service(unsigned long ip, unsigned short port, const char * data, int data_len) {
+}
+
+void db_update_vhost(const std::string & vhost, const std::string & url, 
+	const char * head_ptr, int head_len, const char * body_ptr, int body_len, int eflag) {
+	
+	db.set(vhost.c_str(), vhost.size(), body_ptr, body_len);
+}
+
+void db_transaction(bool start) {
+}
+
+void db_finish() {
+	db.close();
+}
+
