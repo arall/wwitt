@@ -26,11 +26,13 @@ void db_query(bool bannercrawl) {
 
 bool db_next(std::vector <std::string> & resultset, bool bannercrawl) {
 	resultset.clear();
-	std::string key;
+	std::string key, value;
 
-	if (!cur->get_key(&key, true))
-		return false;
-  
+	do {
+		if (!cur->get(&key, &value, true))
+			return false;
+	} while (value.size() > 0);
+
 	resultset.push_back(key);
 	return true;
 }

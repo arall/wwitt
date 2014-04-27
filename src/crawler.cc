@@ -192,6 +192,12 @@ std::string parse_response(char * buffer, int size, const std::string current_ur
 	}
 }
 
+volatile int db_global_end = 0;
+void sigterm(int s) {
+	std::cerr << "Forcing end ..." << std::endl;
+	db_global_end = 1;
+}
+
 void clean_entry(struct connection_query * q) {
 	close(q->socket);
 	q->vhost = "";
@@ -238,6 +244,8 @@ int main(int argc, char **argv) {
 		clean_entry(&connection_table[i]);
 	
 	signal(SIGPIPE, SIG_IGN);
+	signal(SIGTERM, &sigterm);
+	signal(SIGINT,  &sigterm);
 	db_initialize();
 	
 	// Init queues
@@ -265,7 +273,7 @@ int main(int argc, char **argv) {
 	db_query(bannercrawl);
 	
 	// Do this while DB has data and we have inflight requests
-	while (num_queued != num_completed || !db_end) {
+	while ((num_queued != num_completed || (!db_end && !db_global_end))) {
 	
 		printf("\rQueues: New %d Completed %d DNS %d Curl %d Connection %d  TOTAL INFLIGHT %lld     ", 
 			pqueue_size(&new_queries),
@@ -275,7 +283,7 @@ int main(int argc, char **argv) {
 		fflush(stdout);
 		
 		// Generate queries and generate new connections
-		if (num_queued - num_completed < max_inflight && !db_end) {
+		if (num_queued - num_completed < max_inflight && !db_end && !db_global_end) {
 			long long na = num_queued - num_completed;
 			//printf("\rAdding more jobs to queue, num active: %lld ...   ", na); fflush(stdout);
 
