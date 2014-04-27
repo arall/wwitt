@@ -23,6 +23,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <sys/resource.h>
+#include <ares.h>
 #include "pqueue.h"
 #include "crawler.h"
 #include "crawler_mysql.h"
@@ -35,7 +36,7 @@
 #define READBUF_CHUNK (16*1024)
 
 #define MAX_TIMEOUT 10   // In seconds
-#define MAX_RETRIES 10
+#define MAX_RETRIES  5   // More than enough
 #define MAX_REDIRS  10
 
 enum RequestsStatus {
@@ -65,6 +66,8 @@ struct connection_query {
 	char *inbuffer, *outbuffer;
 	unsigned long start_time;
 };
+
+volatile int dns_inflight_ = 0;
 
 pqueue new_queries;
 pqueue dns_queries;
@@ -103,11 +106,8 @@ void * curl_dispatcher(void * args);
 #define CONNECT_OK(ret) (ret >= 0 || (ret < 0 && (errno == EISCONN || errno == EALREADY)))
 #define IOTRY_AGAIN(ret) (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
 
-volatile int adder_finish = 0;
-
 int max_inflight = 100;
-int max_dns_inflight = 50;
-int max_curl_inflight = 5;
+int max_curl_inflight = 50;
 
 int setNonblocking(int fd) {
 	int flags;
@@ -259,15 +259,15 @@ int main(int argc, char **argv) {
 	pthread_t db;
 	pthread_create (&db, NULL, &database_dispatcher, &bannercrawl);
 
-	pthread_t dns_workers[max_dns_inflight];
+	pthread_t dns_worker;
 	pthread_t curl_workers[max_curl_inflight];
 	if (!bannercrawl) {
-		for (int i = 0; i < max_dns_inflight; i++)
-			pthread_create (&dns_workers[i], NULL, &dns_dispatcher, 0);
 		for (int i = 0; i < max_curl_inflight; i++)
 			pthread_create (&curl_workers[i], NULL, &curl_dispatcher, 0);
+		
+		pthread_create (&dns_worker, NULL, &dns_dispatcher, 0);
 	}
-
+	
 	int db_end = 0;
 	// Infinite loop: query IP/Domain blocks
 	db_query(bannercrawl);
@@ -277,7 +277,7 @@ int main(int argc, char **argv) {
 	
 		printf("\rQueues: New %d Completed %d DNS %d Curl %d Connection %d  TOTAL INFLIGHT %lld     ", 
 			pqueue_size(&new_queries),
-			pqueue_size(&completed_queries),pqueue_size(&dns_queries),pqueue_size(&curl_queries),
+			pqueue_size(&completed_queries),pqueue_size(&dns_queries)+dns_inflight_,pqueue_size(&curl_queries),
 			pqueue_size(&connection_queries)+active_connections.size(),
 			num_queued - num_completed);
 		fflush(stdout);
@@ -473,14 +473,12 @@ int main(int argc, char **argv) {
 	pqueue_release(&dns_queries);
 	pqueue_release(&curl_queries);
 	pqueue_release(&completed_queries);
-	adder_finish = 1;
 	
 	pthread_join(db, NULL);
 	if (!bannercrawl) {
-		for (int i = 0; i < max_dns_inflight; i++)
-			pthread_join (dns_workers[i], NULL);
 		for (int i = 0; i < max_curl_inflight; i++)
 			pthread_join (curl_workers[i], NULL);
+		pthread_join (dns_worker, NULL);
 	}
 	
 	db_finish();
@@ -561,31 +559,91 @@ void dechunk_http(char * buffer, int * size) {
 	free(newbuffer);
 }
 
+// DNS callback for c-ares
+static void dns_callback(void *arg, int status, int timeouts, struct hostent *host) {
+	connection_query * cquery = (connection_query*)arg;
+	if (status == ARES_SUCCESS) {
+		char **p = host->h_addr_list;
+		unsigned char ip[4] = { *(*p+0), *(*p+1), *(*p+2), *(*p+3) };
+		
+		unsigned long lip = (ip[0]<<24) | (ip[1]<<16) | (ip[2]<<8) | (ip[3]);
+		cquery->ip = lip;
+		cquery->start_time = time(0);
+		
+		//if (verbose)
+		//	std::cout << "Resolved " << tosolve << " to " << ip << std::endl;
+		
+		pqueue_push(&connection_queries, cquery);
+	}
+	else {
+		// Respin it
+		// Since cares already retries DNS requests, make sure it doens't respin
+		cquery->retries = MAX_RETRIES;
+		pqueue_push(&new_queries, cquery);
+	}
+	dns_inflight_--;
+}
+
 // Wait for DNS requests, process them one at a time and store the IP back
 void * dns_dispatcher(void * args) {
-	connection_query * cquery = (connection_query*)pqueue_pop(&dns_queries);
 
-	while (cquery) {
-		assert(cquery->status == reqDnsQuery);
-		cquery->status = reqDnsQuerying;
+	// DNS servers
+	const char * dns_servers[4] = { "209.244.0.3", "209.244.0.4", "8.8.8.8", "8.8.4.4" };
+	struct in_addr dns_servers_addr[4];
 
-		struct addrinfo *result;
-		std::string tosolve = gethostname(cquery->url);
-		if (getaddrinfo(tosolve.c_str(), NULL, NULL, &result) == 0) {
-			unsigned long ip = ntohl(((struct sockaddr_in*)result->ai_addr)->sin_addr.s_addr);
-			cquery->ip = ip;
-			cquery->start_time = time(0);
-			if (verbose)
-				std::cout << "Resolved " << tosolve << " to " << ip << std::endl;
-			
-			pqueue_push(&connection_queries, cquery);
-		}
-		else {
-			pqueue_push(&new_queries, cquery);
-		}
-		
-		cquery = (connection_query*)pqueue_pop(&dns_queries);
+	// Ares init with options
+	ares_channel channel;
+	ares_library_init(ARES_LIB_INIT_ALL);
+
+	struct ares_options a_opt;
+	memset(&a_opt,0,sizeof(a_opt));
+	a_opt.tries = 1;
+	a_opt.nservers = sizeof(dns_servers)/sizeof(dns_servers[0]);
+	a_opt.servers = &dns_servers_addr[0];
+	for (int i = 0; i < a_opt.nservers; i++)
+		inet_aton(dns_servers[i], &dns_servers_addr[i]);
+	if (ARES_SUCCESS != ares_init_options(&channel, &a_opt, ARES_OPT_TRIES | ARES_OPT_SERVERS | ARES_OPT_ROTATE)) {
+		std::cerr << "Error with c-ares!" << std::endl;
+		exit(1);
 	}
+	
+	while (1) {
+		// Retrieve new queries and add them
+		connection_query * cquery = (connection_query*)pqueue_pop_nonb(&dns_queries);
+		while (cquery) {
+			assert(cquery->status == reqDnsQuery);
+			cquery->status = reqDnsQuerying;
+			std::string tosolve = gethostname(cquery->url);
+			
+			ares_gethostbyname(channel, tosolve.c_str(), AF_INET, dns_callback, (void*)cquery);
+			dns_inflight_++;
+			
+			cquery = (connection_query*)pqueue_pop_nonb(&dns_queries);
+		}
+
+		// Process DNSs
+		struct timeval tv;
+		fd_set read_fds, write_fds;
+		FD_ZERO(&read_fds);
+		FD_ZERO(&write_fds);
+		int nfds = ares_fds(channel, &read_fds, &write_fds);
+		struct timeval * tvp = ares_timeout(channel, NULL, &tv);
+		if (nfds > 0)
+			select(nfds, &read_fds, &write_fds, NULL, tvp);
+		ares_process(channel, &read_fds, &write_fds);
+		
+		// Sleep while not working
+		if (dns_inflight_ == 0)
+			pqueue_wait(&dns_queries);
+			
+		// No queries working and no more to come, exit!
+		if (dns_inflight_ == 0 && pqueue_released(&dns_queries))
+			break;
+	}
+
+	ares_destroy(channel);
+	ares_library_cleanup();
+
 	return 0;
 }
 
@@ -643,7 +701,7 @@ void * database_dispatcher(void * args) {
 				int len1, len2; char *p1, *p2;
 				separate_body(cquery->inbuffer, cquery->received, &p1, &p2, &len1, &len2);
 
-				db_update_vhost(cquery->vhost, cquery->url, p2, len2, p1, len1, eflag);
+				db_update_vhost(cquery->vhost, cquery->url, p1, len1, p2, len2, eflag);
 			}
 			num_processed++;
 			if (verbose)
@@ -675,6 +733,7 @@ void * database_dispatcher(void * args) {
 struct http_query {
 	char * buffer;
 	int received;
+	unsigned long start_time;
 };
 static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream);
 
@@ -688,6 +747,7 @@ void * curl_dispatcher(void * args) {
 		struct http_query hq;
 		memset(&hq,0,sizeof(hq));
 		hq.buffer = (char*)malloc(32);
+		hq.start_time = time(0);
 
 		CURL * curl = curl_easy_init();
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
@@ -731,6 +791,9 @@ void * curl_dispatcher(void * args) {
 
 static size_t curl_fwrite(void *buffer, size_t size, size_t nmemb, void *stream) {
 	struct http_query * q = (struct http_query *)stream;
+	
+	if (time(0) - q->start_time > MAX_TIMEOUT*10)
+		return -1;   // This timeout for slow loading websites
 
 	size_t newsize = q->received + size*nmemb;
 	if (newsize >= BUFSIZE)

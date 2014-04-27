@@ -100,7 +100,7 @@ void db_update_vhost(const std::string & vhost, const std::string & url,
 	std::string hostname = mysql_real_escape_std_string(mysql_conn_update,vhost);
 	std::string url_     = mysql_real_escape_std_string(mysql_conn_update,url);
 
-	sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=`status`|%d WHERE  `host`=\"%s\";", tempb_, tempb, url_.c_str(), eflag, hostname.c_str());
+	sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=`status`|%d WHERE  `host`=\"%s\";", tempb, tempb_, url_.c_str(), eflag, hostname.c_str());
 	
 	if (mysql_query(mysql_conn_update,sql_query)) {
 		if (mysql_errno(mysql_conn_update) == CR_SERVER_GONE_ERROR) {

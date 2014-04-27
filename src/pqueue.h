@@ -115,7 +115,7 @@ static void * pqueue_pop_nonb(struct pqueue * queue) {
 	return udata;
 }
 
-
+// Returns queue size
 static int pqueue_size(struct pqueue * queue) {
 	pthread_mutex_lock(&queue->queue_lock);
 	struct pqueue_elem * h = queue->qhead;
@@ -131,4 +131,25 @@ static int pqueue_size(struct pqueue * queue) {
 	return size;
 }
 
+// Returns whether the queue has been marked as released (writer finished)
+static int pqueue_released(struct pqueue * queue) {
+	pthread_mutex_lock(&queue->queue_lock);
+	
+	int res = queue->queue_end;
+	
+	pthread_mutex_unlock(&queue->queue_lock);
+	
+	return res;
+}
+
+// Sleeps until the queue has at least one element in it or the queue is released
+static void pqueue_wait(struct pqueue * queue) {
+	pthread_mutex_lock(&queue->queue_lock);
+	
+	while (queue->qhead == 0 && !queue->queue_end) {
+		pthread_cond_wait(&queue->not_empty,&queue->queue_lock);
+	}
+	
+	pthread_mutex_unlock(&queue->queue_lock);
+}
 

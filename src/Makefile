@@ -12,10 +12,10 @@ scan:
 	$(CC) -o scan scan.c -lpcap  -lpthread -O2 `mysql_config --include` `mysql_config --libs`
 
 crawler:
-	$(CXX) -o crawler crawler.cc crawler_mysql.cc -lpthread -O0 -ggdb `mysql_config --include` `mysql_config --libs` -lcurl
+	$(CXX) -o crawler crawler.cc crawler_mysql.cc -lpthread -O0 -ggdb `mysql_config --include` `mysql_config --libs` -lcurl -lcares
 
 crawlerkc:
-	$(CXX) -o crawlerkc crawler.cc crawler_kc.cc -lpthread -O0 -ggdb -lkyotocabinet -lcurl
+	$(CXX) -o crawlerkc crawler.cc crawler_kc.cc -lpthread -O2 -ggdb -lkyotocabinet -lcurl -lcares
 
 vhost:
 	$(CXX) -o captcha.o -c captcha.cc  -O0 -ggdb
