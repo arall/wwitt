@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <pcap.h>
+#include <pcap/sll.h>
 #include <signal.h>
 #include <net/ethernet.h>
 #include <pthread.h>
@@ -89,6 +90,7 @@ unsigned int num_t_ent = 0;
 unsigned long long num_ports_open = 0;
 unsigned long long num_ports_filtered = 0;
 
+int ethdev;
 
 uint16_t checksum_comp(uint16_t *addr, int len);
 void process_packet(unsigned char *args, const struct pcap_pkthdr *header, const unsigned char *buffer);
@@ -199,6 +201,15 @@ int main(int argc, char **argv) {
 	
 	signal(SIGTERM, &sigterm);
 	signal(SIGINT, &sigterm);
+
+	int devtype = pcap_datalink(handle);
+	if (devtype != DLT_EN10MB &&
+		devtype != DLT_LINUX_SLL) {
+		fprintf (stderr, "Cannot capture on device type %d, only ethernet and SLL supported\n", devtype);
+	}
+
+	ethdev = (devtype == DLT_EN10MB);
+	printf("Link type: %d\n",devtype);
 	
 	pcap_loop(handle , -1 , process_packet , NULL);
 }
@@ -402,7 +413,7 @@ void inject_packet(char * datagram) {
 
 void process_packet(unsigned char *args, const struct pcap_pkthdr *header, const unsigned char *buffer) {
 	// Parse IP and TCP headers. Look for SYN/ACK transactions or any other kind of status
-	struct sniff_ip *iph = (struct sniff_ip*)(buffer + sizeof(struct ethhdr));
+	struct sniff_ip *iph = (ethdev) ? (struct sniff_ip*)(buffer + sizeof(struct ethhdr)) : (struct sniff_ip*)(buffer + sizeof(struct sll_header));
 	struct sniff_tcp *tcph = (struct sniff_tcp *)((char*)iph + sizeof(struct sniff_ip));
 	struct sockaddr_in dest;
 	memset(&dest, 0, sizeof(dest));
