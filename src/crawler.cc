@@ -179,6 +179,7 @@ public:
 		// Use the same old vhost, just give it the new url
 		Connection *c = new Connection(oc->vhost, newloc);
 		c->redirs = oc->redirs + 1;
+		c->retries = oc->retries;
 		delete oc;
 		return c;
 	}
@@ -188,6 +189,7 @@ public:
 		Connection *c = bannercrawl ? new Connection(oc->ip, oc->port) :
 		                              new Connection(oc->vhost, oc->url);
 		c->retries = oc->retries + 1;
+		c->redirs = oc->redirs;
 		delete oc;
 		return c;
 	}
@@ -554,7 +556,9 @@ std::string parse_response(std::string in, const std::string current_url) {
 	auto hb = separate_body(in);
 	auto header = hb.first;
 
-	auto locpos = casefind(header, "Location:");
+	// Add \n as prefix since it gets confused with Content-Location
+	// which results in unnecessary redirections (and maybe other similar headers!)
+	auto locpos = casefind(header, "\nLocation:");
 	if (locpos == std::string::npos) return "";
 
 	auto location = header.substr(locpos + 9);
