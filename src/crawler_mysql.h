@@ -1,11 +1,30 @@
 
-void db_initialize();
-void db_query(bool bannercrawl);
-bool db_next(std::vector <std::string> & resultset, bool bannercrawl);
+#include <mysql.h>
+#include "crawler_iface.h"
 
-void db_update_service(unsigned long ip, unsigned short port, const char * data, int data_len);
-void db_update_vhost(const std::string & vhost, const std::string & url,
-	const char * head_ptr, int head_len, const char * body_ptr, int body_len, int flag);
-void db_transaction(bool start);
-void db_finish();
+#define QUERIES_PER_TR   100
+
+class DBMysql : public DBIface {
+public:
+	DBMysql(bool bannercrawl, std::string args);
+	virtual ~DBMysql();
+
+	bool next(std::vector <std::string> & resultset) override;
+
+	void updateService(uint32_t ip, unsigned short port, std::string data) override;
+	void updateVhost(const std::string &vhost, const std::string &url,
+	                 std::string head, std::string body, int flag) override;
+
+protected:
+	void reconnect(MYSQL ** c);
+	void do_query(MYSQL *c, const char *query);
+	void transaction(bool start);
+
+	MYSQL *mysql_conn_select;
+	MYSQL *mysql_conn_update;
+
+	MYSQL_RES *query_result;
+	unsigned tcount;
+};
+
 

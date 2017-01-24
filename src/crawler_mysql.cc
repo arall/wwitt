@@ -3,16 +3,50 @@
 #include <vector>
 #include <string>
 #include <unistd.h>
-#include <mysql.h>
 #include <errmsg.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "crawler_mysql.h"
 #include "crawler.h"
 
-MYSQL *mysql_conn_select = 0;
-MYSQL *mysql_conn_update = 0;
+void DBMysql::do_query(MYSQL *c, const char *query) {
+	for (unsigned i = 0; i < 2; i++) {
+		if (mysql_query(c, query)) {
+			if (mysql_errno(c) == CR_SERVER_GONE_ERROR) {
+				printf("Reconnect due to connection drop\n");
+				reconnect(&c);
+			}
+		}
+		else
+			break;
+	}
+}
 
-void mysql_initialize();
+void DBMysql::transaction(bool start) {
+	if (start)
+		do_query(mysql_conn_update, "START TRANSACTION");
+	else
+		do_query(mysql_conn_update, "COMMIT");
+}
+
+DBMysql::DBMysql(bool bannercrawl, std::string args) 
+  : DBIface(bannercrawl) {
+
+	/* Connect to database */
+	printf("Connecting to mysqldb...\n");
+	reconnect(&mysql_conn_select);
+	reconnect(&mysql_conn_update);
+	printf("Connected!\n");
+
+	tcount = 0;
+
+	const char * query = "SELECT `host` FROM `virtualhosts` WHERE (`head` IS null OR `index` IS null)";
+	if (bannercrawl) query = "SELECT `ip`, `port` FROM `services` WHERE `head` IS null";
+	do_query(mysql_conn_select, query);
+	query_result = mysql_store_result(mysql_conn_select);
+
+	transaction(true);
+}
 
 std::string mysql_real_escape_std_string(MYSQL * c, const std::string s) {
 	char tempb[s.size()*2+2];
@@ -20,19 +54,7 @@ std::string mysql_real_escape_std_string(MYSQL * c, const std::string s) {
 	return std::string(tempb);
 }
 
-void db_initialize() {
-	mysql_initialize();
-};	
-
-MYSQL_RES *query_result = 0;
-void db_query(bool bannercrawl) {
-	const char * query = "SELECT `host` FROM `virtualhosts` WHERE (`head` IS null OR `index` IS null)";
-	if (bannercrawl) query = "SELECT `ip`, `port` FROM `services` WHERE `head` IS null";
-	mysql_query(mysql_conn_select, query);
-	query_result = mysql_store_result(mysql_conn_select);
-}
-
-bool db_next(std::vector <std::string> & resultset, bool bannercrawl) {
+bool DBMysql::next(std::vector <std::string> & resultset) {
 	MYSQL_ROW row;
 	row = mysql_fetch_row(query_result);
 	if (!row) return false;
@@ -44,8 +66,7 @@ bool db_next(std::vector <std::string> & resultset, bool bannercrawl) {
 	return true;
 }
 
-
-void db_reconnect(MYSQL ** c) {
+void DBMysql::reconnect(MYSQL ** c) {
 	if (*c)
 		mysql_close(*c);
 
@@ -64,61 +85,45 @@ void db_reconnect(MYSQL ** c) {
 	}
 }
 
-void mysql_initialize() {
-	/* Connect to database */
-	printf("Connecting to mysqldb...\n");
-	db_reconnect(&mysql_conn_select);
-	db_reconnect(&mysql_conn_update);
-	printf("Connected!\n");
-}
-
-void db_update_service(unsigned long ip, unsigned short port, const char * data, int data_len) {
+void DBMysql::updateService(uint32_t ip, unsigned short port, std::string data) {
 	char sql_query[BUFSIZE*3];
-	char tempb[data_len*2+2];
-	mysql_real_escape_string(mysql_conn_update, tempb, data, data_len);
+	char tempb[data.size()*2+2];
+	mysql_real_escape_string(mysql_conn_update, tempb, data.c_str(), data.size());
 	sprintf(sql_query,"UPDATE `services` SET `head`='%s' WHERE `ip`=%lu AND `port`=%d\n",
 		tempb, ip, port);
 	
-	if (mysql_query(mysql_conn_update,sql_query)) {
-		if (mysql_errno(mysql_conn_update) == CR_SERVER_GONE_ERROR) {
-			printf("Reconnect due to connection drop\n");
-			db_reconnect(&mysql_conn_update);
-		}
-	}
+	if (tcount == QUERIES_PER_TR-1) transaction(false);
+	tcount = (tcount + 1) % QUERIES_PER_TR;
+	if (tcount == 0) transaction(true);
+
+	do_query(mysql_conn_update, sql_query);
 }
 
-void db_update_vhost(const std::string & vhost, const std::string & url, 
-	const char * head_ptr, int head_len, const char * body_ptr, int body_len, int eflag) {
+void DBMysql::updateVhost(const std::string &vhost, const std::string &url,
+	                      std::string head, std::string body, int eflag) {
 	
 	char sql_query[BUFSIZE*3];
-	char tempb [body_len*2+2];
-	char tempb_[head_len*2+2];
 
-	mysql_real_escape_string(mysql_conn_update, tempb,  body_ptr, body_len);
-	mysql_real_escape_string(mysql_conn_update, tempb_, head_ptr, head_len);
+	std::string head_    = mysql_real_escape_std_string(mysql_conn_update, head);
+	std::string body_    = mysql_real_escape_std_string(mysql_conn_update, body);
+	std::string hostname = mysql_real_escape_std_string(mysql_conn_update, vhost);
+	std::string url_     = mysql_real_escape_std_string(mysql_conn_update, url);
 
-	std::string hostname = mysql_real_escape_std_string(mysql_conn_update,vhost);
-	std::string url_     = mysql_real_escape_std_string(mysql_conn_update,url);
-
-	sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=`status`|%d WHERE  `host`=\"%s\";", tempb, tempb_, url_.c_str(), eflag, hostname.c_str());
+	sprintf(sql_query, "UPDATE virtualhosts SET `index`='%s',`head`='%s',`url`='%s',`status`=`status`|%d WHERE  `host`=\"%s\";",
+	        head_.c_str(), body_, url_.c_str(), eflag, hostname.c_str());
 	
-	if (mysql_query(mysql_conn_update,sql_query)) {
-		if (mysql_errno(mysql_conn_update) == CR_SERVER_GONE_ERROR) {
-			printf("Reconnect due to connection drop\n");
-			db_reconnect(&mysql_conn_update);
-		}
-	}
+	if (tcount == QUERIES_PER_TR-1) transaction(false);
+	tcount = (tcount + 1) % QUERIES_PER_TR;
+	if (tcount == 0) transaction(true);
+
+	do_query(mysql_conn_update, sql_query);
 }
 
-void db_transaction(bool start) {
-	if (start)
-		mysql_query(mysql_conn_update, "START TRANSACTION");
-	else
-		mysql_query(mysql_conn_update, "COMMIT");
-}
+DBMysql::~DBMysql() {
+	transaction(false);
 
-void db_finish() {
 	mysql_close(mysql_conn_select);
 	mysql_close(mysql_conn_update);
 }
+
 
