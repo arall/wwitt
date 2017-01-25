@@ -20,12 +20,11 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
-#include <sys/socket.h>
 #include <unistd.h>
 #include <signal.h>
 #include <pthread.h>
-#include <semaphore.h>
 #include <sys/resource.h>
+#include <brotli/encode.h>
 #include <ares.h>
 #include "pqueue.h"
 #include "crawler.h"
@@ -46,11 +45,6 @@
                |                                        |
                ----------> curl_queries  ---------------!
 */
-
-#define TRUE  1
-#define FALSE 0
-#define default_low  1
-#define default_high 1024
 
 #define READBUF_CHUNK (16*1024)
 
@@ -95,6 +89,7 @@ int setNonblocking(int fd) {
 
 std::atomic<unsigned> dns_inflight_(0);
 std::atomic<unsigned> curl_inflight_(0);
+std::atomic<unsigned> db_inflight_(0);
 std::atomic<unsigned> num_completed(0);
 std::atomic<unsigned> num_queued(0);
 
@@ -200,7 +195,7 @@ public:
 		epoll_ctl(epollfd, EPOLL_CTL_DEL, sock, NULL);
 		{
 			std::lock_guard<std::mutex> lock(conns_mutex);
-			conns.erase(gid);
+			assert(conns.count(gid) == 0);
 		}
 	}
 
@@ -306,6 +301,7 @@ void * curl_dispatcher(void * args);
 
 int max_inflight = 100;
 int max_curl_inflight = 50;
+int max_db_inflight = 2;
 
 std::atomic<bool> db_global_end(false);
 void sigterm(int s) {
@@ -365,8 +361,9 @@ int main(int argc, char **argv) {
 	pqueue_init(&completed_queries);
 	
 	// Start!
-	pthread_t dbt;
-	pthread_create (&dbt, NULL, &database_dispatcher, &bannercrawl);
+	pthread_t dbt[max_db_inflight];
+	for (unsigned i = 0; i < max_db_inflight; i++)
+		pthread_create (&dbt[i], NULL, &database_dispatcher, &bannercrawl);
 
 	pthread_t dns_worker;
 	pthread_t curl_workers[max_curl_inflight];
@@ -389,16 +386,14 @@ int main(int argc, char **argv) {
 			numconns = Connection::conns.size();
 		}
 		printf("\rQueues> New: %d, Completed: %d, DNS: %d, Curl: %d, Connection: %d // INFLIGHT %u, DONE %u, DB: %u        ", 
-			pqueue_size(&new_queries), pqueue_size(&completed_queries),
+			pqueue_size(&new_queries),
+			pqueue_size(&completed_queries) + db_inflight_,
 			pqueue_size(&dns_queries) + dns_inflight_,
 			pqueue_size(&curl_queries) + curl_inflight_,
 			pqueue_size(&connection_queries) + numconns,
 			num_queued - num_completed, unsigned(num_completed), (unsigned)db_end);
 		fflush(stdout);
 
-		if (num_completed > 50000000)
-			db_global_end = 1;
-		
 		// Generate queries and generate new connections
 		if (num_queued - num_completed < max_inflight && !db_end && !db_global_end) {
 			db_end = 1;
@@ -439,7 +434,7 @@ int main(int argc, char **argv) {
 				}
 				if (icq->status == reqDnsQuery)   pqueue_push(&dns_queries, icq);
 				if (icq->status == reqCurl)       pqueue_push(&curl_queries, icq);
-				//if (icq->status == reqConnecting) active_connections.push_back(icq);
+				if (icq->status == reqConnecting) pqueue_push(&connection_queries, icq);
 			}
 						
 			icq = (Connection*)pqueue_pop_nonb(&new_queries);
@@ -503,7 +498,8 @@ int main(int argc, char **argv) {
 	pqueue_release(&curl_queries);
 	pqueue_release(&completed_queries);
 	
-	pthread_join(dbt, NULL);
+	for (unsigned i = 0; i < max_db_inflight; i++)
+		pthread_join(dbt[i], NULL);
 	if (!bannercrawl) {
 		for (int i = 0; i < max_curl_inflight; i++)
 			pthread_join (curl_workers[i], NULL);
@@ -724,6 +720,25 @@ void * dns_dispatcher(void * args) {
 	return 0;
 }
 
+std::string brotliarchive(std::string in) {
+	BrotliEncoderState* s = BrotliEncoderCreateInstance(0, 0, 0);
+	BrotliEncoderSetParameter(s, BROTLI_PARAM_QUALITY, 10);
+	BrotliEncoderSetParameter(s, BROTLI_PARAM_LGWIN, BROTLI_MAX_WINDOW_BITS);
+
+	uint8_t *tptr = (uint8_t*)malloc(in.size()*2);
+	size_t available_in = in.size();
+	size_t available_out = in.size() * 2;
+	const uint8_t *next_in = (uint8_t*)in.data();
+	uint8_t *next_out = tptr;
+	BrotliEncoderCompressStream(s, BROTLI_OPERATION_FINISH, &available_in, &next_in, &available_out, &next_out, NULL);
+	BrotliEncoderDestroyInstance(s);
+
+	std::string ret((char*)tptr, available_out);
+	free(tptr);
+
+	return ret;
+}
+
 // Walk the table from time to time and insert results into the database
 void * database_dispatcher(void * args) {
 	bool bannercrawl = *(bool*)args;
@@ -733,6 +748,7 @@ void * database_dispatcher(void * args) {
 	Connection * c = (Connection*)pqueue_pop(&completed_queries);
 	
 	while (c) {
+		db_inflight_++;
 		assert(c->status == reqComplete || c->status == reqCompleteError);
 
 		// Analyze the response, maybe we find some redirects
@@ -754,9 +770,8 @@ void * database_dispatcher(void * args) {
 				db->updateService(c->ip, c->port, c->inbuffer);
 			}else{
 				int eflag = c->status == reqCompleteError ? 0x80 : 0;
-				auto hbparsed = separate_body(c->inbuffer);
 
-				db->updateVhost(c->vhost, c->url, hbparsed.first, hbparsed.second, eflag);
+				db->updateVhost(c->vhost, c->url, brotliarchive(c->inbuffer), eflag);
 			}
 			num_processed++;
 			if (verbose)
@@ -766,7 +781,8 @@ void * database_dispatcher(void * args) {
 			delete c;
 			num_completed++;  // Allow one more to come in
 		}
-		
+		db_inflight_--;
+
 		c = (Connection*)pqueue_pop(&completed_queries);
 	}
 	

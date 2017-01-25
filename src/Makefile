@@ -12,7 +12,7 @@ scan:
 	$(CC) -o scan scan.c -lpcap  -lpthread -O2 `mysql_config --include` `mysql_config --libs`
 
 crawler:
-	$(CXX) -o crawler crawler.cc crawler_mysql.cc crawler_kc.cc -lkyotocabinet -lpthread -O2 -ggdb `mysql_config --include` `mysql_config --libs` -lcurl -lcares -lbrotlienc -lbrotlicommon
+	$(CXX) -o crawler crawler.cc crawler_kc.cc -lkyotocabinet -lpthread -O2 -ggdb -lcurl -lcares -lbrotlienc -lbrotlicommon # `mysql_config --include` `mysql_config --libs`
 
 crawlerkc:
 	$(CXX) -o crawlerkc crawler.cc crawler_kc.cc -lpthread -O2 -ggdb -lkyotocabinet -lcurl -lcares

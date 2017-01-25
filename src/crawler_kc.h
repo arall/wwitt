@@ -12,7 +12,7 @@ public:
 
 	void updateService(uint32_t ip, unsigned short port, std::string data) override;
 	void updateVhost(const std::string &vhost, const std::string &url,
-	                 std::string head, std::string body, int flag) override;
+	                 std::string data, int flag) override;
 
 
 protected:
