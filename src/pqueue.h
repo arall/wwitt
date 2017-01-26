@@ -10,12 +10,16 @@ struct pqueue {
 	pthread_mutex_t queue_lock;
 	pthread_cond_t  not_empty;
 	int queue_end;
+	int queue_size;
 	struct pqueue_elem * qhead;
+	struct pqueue_elem * qtail;
 };
 
 static void pqueue_init(struct pqueue * queue) {
 	queue->queue_end = 0;
-	queue->qhead = 0;
+	queue->qhead = NULL;
+	queue->qtail = NULL;
+	queue->queue_size = 0;
 	pthread_mutex_init(&queue->queue_lock, NULL);
 	pthread_cond_init(&queue->not_empty, NULL);
 }
@@ -33,16 +37,23 @@ static void pqueue_release(struct pqueue * queue) {
 
 static void pqueue_push(struct pqueue * queue, void * usr_data) {
 	pthread_mutex_lock(&queue->queue_lock);
-	struct pqueue_elem * h = queue->qhead;
-	while (h && h->next != 0)
-		h = h->next;
-	
+
+	// Create list node and fill it in
 	struct pqueue_elem * ne = (struct pqueue_elem *)malloc(sizeof(pqueue_elem));
 	ne->data = usr_data;
 	ne->next = 0;
 
-	if (h) h->next = ne;
-	else   queue->qhead = ne;
+	// Non Null qtail pointer means we already have a ptr to the last elem
+	// Null ptr means list is empty
+	if (queue->qtail)
+		queue->qtail->next = ne;
+	else
+		queue->qhead = ne;
+
+	// qtail points to the newly created element
+	queue->qtail = ne;
+
+	queue->queue_size++;
 	
 	// Signal some other thread waiting in the queue
 	pthread_cond_signal(&queue->not_empty);
@@ -59,6 +70,11 @@ static void pqueue_push_front(struct pqueue * queue, void * usr_data) {
 	ne->next = queue->qhead;
 
 	queue->qhead = ne;
+	queue->queue_size++;
+
+	// If list was empty now we have a last element
+	if (!queue->qtail)
+		queue->qtail = ne;
 	
 	// Signal some other thread waiting in the queue
 	pthread_cond_signal(&queue->not_empty);
@@ -78,6 +94,10 @@ static void * pqueue_pop(struct pqueue * queue) {
 			udata = queue->qhead->data;
 		
 			queue->qhead = queue->qhead->next;
+			queue->queue_size--;
+			if (!queue->qhead)
+				queue->qtail = NULL;
+
 			free(h);
 		}
 		
@@ -107,6 +127,10 @@ static void * pqueue_pop_nonb(struct pqueue * queue) {
 		udata = queue->qhead->data;
 	
 		queue->qhead = queue->qhead->next;
+		queue->queue_size--;
+		if (!queue->qhead)
+			queue->qtail = NULL;
+
 		free(h);
 	}
 		
@@ -118,13 +142,8 @@ static void * pqueue_pop_nonb(struct pqueue * queue) {
 // Returns queue size
 static int pqueue_size(struct pqueue * queue) {
 	pthread_mutex_lock(&queue->queue_lock);
-	struct pqueue_elem * h = queue->qhead;
 	
-	int size = 0;
-	while (h != 0) {
-		h = h->next;
-		size++;
-	}
+	int size = queue->queue_size;;
 	
 	pthread_mutex_unlock(&queue->queue_lock);
 	

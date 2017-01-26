@@ -181,6 +181,7 @@ public:
 
 	static Connection* retryConnection(Connection *oc, bool bannercrawl) {
 		// Just copy the initial values and increment retries
+		// conns doesnt have oc any more
 		Connection *c = bannercrawl ? new Connection(oc->ip, oc->port) :
 		                              new Connection(oc->vhost, oc->url);
 		c->retries = oc->retries + 1;
@@ -385,13 +386,13 @@ int main(int argc, char **argv) {
 			std::lock_guard<std::mutex> lock(Connection::conns_mutex);
 			numconns = Connection::conns.size();
 		}
-		printf("\rQueues> New: %d, Completed: %d, DNS: %d, Curl: %d, Connection: %d // INFLIGHT %u, DONE %u, DB: %u        ", 
+		printf("\rQueues> New: %4d, Completed: %4d, DNS: %4d, Curl: %4d, Connection: %4d // INFLIGHT %4u, DONE %8u",
 			pqueue_size(&new_queries),
 			pqueue_size(&completed_queries) + db_inflight_,
 			pqueue_size(&dns_queries) + dns_inflight_,
 			pqueue_size(&curl_queries) + curl_inflight_,
 			pqueue_size(&connection_queries) + numconns,
-			num_queued - num_completed, unsigned(num_completed), (unsigned)db_end);
+			num_queued - num_completed, unsigned(num_completed));
 		fflush(stdout);
 
 		// Generate queries and generate new connections
@@ -463,8 +464,9 @@ int main(int argc, char **argv) {
 			std::lock_guard<std::mutex> lock(Connection::conns_mutex);
 			for (auto elem: Connection::conns)
 				if (elem.second->hasTimedOut()) {
-					if (elem.second->process(bannercrawl))
-						remove_set.insert(elem.second);
+					bool dispose = elem.second->process(bannercrawl);
+					remove_set.insert(elem.second);
+					assert(dispose);
 				}
 				else
 					break;
@@ -557,7 +559,7 @@ std::string parse_response(std::string in, const std::string current_url) {
 	auto locpos = casefind(header, "\nLocation:");
 	if (locpos == std::string::npos) return "";
 
-	auto location = header.substr(locpos + 9);
+	auto location = header.substr(locpos + 10);
 	while (location.size() && location[0] == ' ')
 		location = location.substr(1);
 
