@@ -25,11 +25,16 @@
 #include <pthread.h>
 #include <sys/resource.h>
 #include <brotli/encode.h>
-#include <ares.h>
 #include "pqueue.h"
 #include "crawler.h"
 //#include "crawler_mysql.h"
 #include "crawler_kc.h"
+
+#ifdef TADNS_RESOLVER
+#include "tadns.h"
+#else
+#include <ares.h>
+#endif
 
 /*
  3 paths: 
@@ -48,8 +53,8 @@
 
 #define READBUF_CHUNK (16*1024)
 
-#define MAX_DNSTIMEOUT   5
-#define MAX_TIMEOUT     10   // In seconds
+#define MAX_DNSTIMEOUT  10
+#define MAX_TIMEOUT     20   // In seconds
 #define MAX_RETRIES      5   // More than enough
 #define MAX_REDIRS      10
 
@@ -612,6 +617,78 @@ std::string dechunk_http(std::string in) {
 	return ret;
 }
 
+
+#ifdef TADNS_RESOLVER
+// DNS callback for tadns
+static void dns_callback(struct dns_cb_data *cbdata) {
+	Connection * c = (Connection*)cbdata->context;
+	dns_inflight_--;
+
+	if (cbdata->error == DNS_OK) {
+		for (const auto & r: cbdata->replies) {
+			if (r.resptype == RESPONSE_ANSWER && r.rtype == DNS_A_RECORD) {
+				uint8_t *ip = (uint8_t*)r.addr.c_str();
+				uint32_t lip = (ip[0]<<24) | (ip[1]<<16) | (ip[2]<<8) | (ip[3]);
+				c->ip = lip;
+
+				pqueue_push(&connection_queries, c);
+				return;
+			}
+		}
+	}
+	else if (cbdata->error == DNS_TIMEOUT || cbdata->error == DNS_ERROR) {
+		// Retry properly!
+		c->retries++;
+		pqueue_push(&new_queries, c);
+		return;
+	}
+
+	// For DNS_DOES_NOT_EXIST or answer not found, try one last time, just in case
+	c->retries++; // This actually means +=2 since we add +1 later
+	pqueue_push(&new_queries, c);
+}
+void * dns_dispatcher(void * args) {
+	DNSResolverIface *dns = createResolver(dns_servers, MAX_DNSTIMEOUT);
+
+	int epollfd = epoll_create(1);
+	auto dnsfds = dns->getFds();
+
+	struct epoll_event ev;
+	ev.events = POLLIN;
+	ev.data.ptr = NULL;
+
+	epoll_ctl(epollfd, EPOLL_CTL_ADD, dnsfds.first,  &ev);
+	epoll_ctl(epollfd, EPOLL_CTL_ADD, dnsfds.second, &ev);
+
+	do {
+		// Retrieve new queries and add them
+		Connection * c = (Connection*)pqueue_pop_nonb(&dns_queries);
+		while (c) {
+			if (c->status != reqDnsQuery) printf("%d %s\n", (int)c->status, c->url.c_str());
+			assert(c->status == reqDnsQuery);
+			c->status = reqDnsQuerying;
+			std::string tosolve = gethostname(c->url);
+
+			dns->resolve(tosolve, DNS_A_RECORD, dns_callback, c, DNS_OPT_RECURSIVE_SOLVE);
+			dns_inflight_++;
+			c = (Connection*)pqueue_pop_nonb(&dns_queries);
+		}
+
+		struct epoll_event t;
+		epoll_wait(epollfd, &t, 1, 1000);
+
+		dns->poll();
+
+		// Sleep while not working
+		if (dns_inflight_ == 0)
+			pqueue_wait(&dns_queries);
+
+	} while (dns_inflight_ != 0 || !pqueue_released(&dns_queries));
+
+	delete dns;
+	close(epollfd);
+}
+#else
 // DNS callback for c-ares
 static void dns_callback(void *arg, int status, int timeouts, struct hostent *host) {
 	Connection * c = (Connection*)arg;
@@ -642,7 +719,6 @@ static void dns_callback(void *arg, int status, int timeouts, struct hostent *ho
 	c->retries = MAX_RETRIES;
 	pqueue_push(&new_queries, c);
 }
-
 // Wait for DNS requests, process them one at a time and store the IP back
 void * dns_dispatcher(void * args) {
 	// Ares init with options
@@ -664,7 +740,7 @@ void * dns_dispatcher(void * args) {
 
 	// Init servers (mix of IPv4 and IPv6, thus use ares_set_servers
 	struct ares_addr_node dns_servers_list[sizeof(dns_servers)/sizeof(dns_servers[0])];
-	const unsigned num_servers = sizeof(dns_servers)/sizeof(dns_servers[0]);
+	const unsigned num_servers = sizeof(dns_servers)/sizeof(dns_servers[0]) - 1;
 	for (unsigned i = 0; i < num_servers; i++) {
 		if (strchr(dns_servers[i], '.') == NULL) {
 			dns_servers_list[i].family = AF_INET6;
@@ -721,6 +797,7 @@ void * dns_dispatcher(void * args) {
 
 	return 0;
 }
+#endif
 
 std::string brotliarchive(std::string in) {
 	BrotliEncoderState* s = BrotliEncoderCreateInstance(0, 0, 0);

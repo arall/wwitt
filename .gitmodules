@@ -1,0 +1,3 @@
+[submodule "src/tadns"]
+	path = src/tadns
+	url = https://github.com/davidgfnet/tadns
