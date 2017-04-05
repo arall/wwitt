@@ -27,10 +27,10 @@ DBKC::~DBKC() {
 
 
 void DBKC::addService(uint32_t ip, uint16_t port) {
-	std::string key = std::to_string(ip >> 24) + "." +
-	                  std::to_string(ip >> 16) + "." +
-	                  std::to_string(ip >>  8) + "." +
-	                  std::to_string(ip      ) + ":" + std::to_string(port);
+	std::string key = std::to_string((ip >> 24)       ) + "." +
+	                  std::to_string((ip >> 16) & 0xFF) + "." +
+	                  std::to_string((ip >>  8) & 0xFF) + "." +
+	                  std::to_string((ip      ) & 0xFF) + ":" + std::to_string(port);
 	db.set(key.c_str(), "");
 }
 
