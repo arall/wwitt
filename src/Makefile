@@ -14,7 +14,7 @@ dispatcher_daemon:
 	$(CXX) -o dispatcher_daemon dispatcher_daemon.cc -O0 -ggdb -lpthread -lcurl
 
 scan:
-	$(CC) -o scan scan.c -lpcap  -lpthread -O2 `mysql_config --include` `mysql_config --libs`
+	$(CXX) -o scan scan.cc -lpcap  -lpthread -O2 crawler_kc.cc -lkyotocabinet
 
 crawler:
 	$(CXX) -o crawler crawler.cc crawler_kc.cc $(DNSLIB) -lkyotocabinet -lpthread -O2 -ggdb -lcurl -lbrotlienc -lbrotlicommon # `mysql_config --include` `mysql_config --libs`

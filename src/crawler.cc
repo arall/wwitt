@@ -297,6 +297,21 @@ public:
 	time_t start_time;
 };
 
+uint32_t getIP(std::string entry) {
+	uint32_t ret = 0;
+	size_t pos = 0;
+	for (unsigned i = 0; i < 4; i++) {
+		ret <<= 8;
+		ret |= atoi(entry.substr(pos).c_str());
+		pos = entry.find('.', pos);
+	}
+	return ret;
+}
+
+uint32_t getPort(std::string entry) {
+	return atoi(entry.substr(entry.find(':') + 1).c_str());
+}
+
 uint64_t Connection::gennumber = 0;
 std::map<uint64_t, Connection*> Connection::conns;
 std::mutex Connection::conns_mutex;
@@ -403,11 +418,11 @@ int main(int argc, char **argv) {
 		// Generate queries and generate new connections
 		if (num_queued - num_completed < max_inflight && !db_end && !db_global_end) {
 			db_end = 1;
-			std::vector <std::string> row;
-			while (db->next(row)) {
+			std::string entry;
+			while (db->next(entry)) {
 				db_end = 0;
-				Connection *t = bannercrawl ? new Connection(atoi(row[0].c_str()), atoi(row[1].c_str())) :
-				                              new Connection(row[0], "http://" + row[0] + "/");
+				Connection *t = bannercrawl ? new Connection(getIP(entry), getPort(entry)) :
+				                              new Connection(entry, "http://" + entry + "/");
 			
 				// Now queue it as a new request
 				pqueue_push(&new_queries, t);

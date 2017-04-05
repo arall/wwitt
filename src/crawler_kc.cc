@@ -26,7 +26,15 @@ DBKC::~DBKC() {
 }
 
 
-bool DBKC::next(std::vector <std::string> & resultset) {
+void DBKC::addService(uint32_t ip, uint16_t port) {
+	std::string key = std::to_string(ip >> 24) + "." +
+	                  std::to_string(ip >> 16) + "." +
+	                  std::to_string(ip >>  8) + "." +
+	                  std::to_string(ip      ) + ":" + std::to_string(port);
+	db.set(key.c_str(), "");
+}
+
+bool DBKC::next(std::string & resultset) {
 	resultset.clear();
 	std::string key, value;
 
@@ -35,12 +43,13 @@ bool DBKC::next(std::vector <std::string> & resultset) {
 			return false;
 	} while (value.size() > 0);
 
-	resultset.push_back(key);
+	resultset = key;
 	return true;
 }
 
 void DBKC::updateService(uint32_t ip, unsigned short port, std::string data) {
-	// NOP for now, not supported
+	// Index hosts by IP, the value contains a JSON dict indexed by port
+	
 }
 
 void DBKC::updateVhost(const std::string &vhost, const std::string &url,

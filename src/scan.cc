@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <errno.h>
 #include <netdb.h>
 #include <arpa/inet.h>
@@ -14,7 +15,10 @@
 #include <net/ethernet.h>
 #include <pthread.h>
 #include <semaphore.h>
-#include <mysql.h>
+#include <unordered_map>
+#include <atomic>
+
+#include "crawler_kc.h"
 
 #define BUFSIZE (1024*1024) //maximum size of any datagram(16 bits the size of identifier)
 #define TRUE 1
@@ -78,17 +82,25 @@ struct pseudo_hdr {
 	u_int16_t len;
 };
 
+enum pStatus { statusUnknown, statusOpen, statusFiltered };
+
 #define MAX_TIMEOUT 10    // Max 255!
 #define MAX_OUTSTANDING_QUERIES (1024*1024*2)
 struct port_query {
 	struct in_addr ip;
 	unsigned short port;
-	unsigned char status; // 0 unused, 1 scanning, 2 open, 3 filtered
-	unsigned char checks;
-} port_scans[MAX_OUTSTANDING_QUERIES];
-unsigned int num_t_ent = 0;
-unsigned long long num_ports_open = 0;
-unsigned long long num_ports_filtered = 0;
+	pStatus status;
+	time_t scan_start;
+	port_query * next;
+};
+
+port_query port_scans[MAX_OUTSTANDING_QUERIES];
+port_query *free_list = &port_scans[0];
+port_query *timeout_list = NULL, *timeout_list_tail = NULL;
+std::unordered_map <uint64_t, port_query*> mapped_scans;
+
+std::atomic<unsigned> num_t_ent(0);
+std::atomic<uint64_t> injected_packets(0);
 
 int ethdev;
 
@@ -99,9 +111,6 @@ void * query_adder(void * args);
 void insert_register(struct in_addr ip, unsigned int port, unsigned int status, char *q1, char *q2);
 void inject_packet(char * datagram);
 void forge_packet(char * datagram, const struct in_addr * targetip, int targetport);
-void mysql_initialize();
-void flush_db(const char * q1, const char * q2);
-void sql_prepare(char *q1, char *q2);
 
 pthread_mutex_t hash_table_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -115,6 +124,7 @@ int maxpp;
 unsigned int total_ips, total_ports;
 int portlist[32];
 volatile int adder_finish = 0;
+DBIface *db = NULL;
 
 void sigterm(int s) {
 	printf("Stopping due to SIGINT/SIGTERM... This will take some seconds, be patient :)\n");
@@ -137,10 +147,16 @@ int main(int argc, char **argv) {
 "                    Port scanner                    \n"  );
 
 	printf("Using %d MB \n", sizeof(port_scans)/1024/1024);
-	if (argc < 6) {
-		fprintf(stderr,"Usage: %s IPstart IPend ports{max 32} speed(mbps) device\n", argv[0]);
+	if (argc < 7) {
+		fprintf(stderr,"Usage: %s IPstart IPend ports{max 32} speed(mbps) device output.db\n", argv[0]);
 		exit(1);
 	}
+
+	// Intialize scan structures
+	for (unsigned i = 1; i < MAX_OUTSTANDING_QUERIES; i++)
+		port_scans[i-1].next = &port_scans[i];
+
+	db = new DBKC(true, argv[6]);
 	
 	// Parse some stuff
 	{
@@ -151,15 +167,15 @@ int main(int argc, char **argv) {
 			plist = strstr(plist, ",");
 			if (plist) plist++;
 		}
-		int KBps = 1024/8*atof(argv[4]);
-		maxpp = (double)(KBps)*1024 / 64;  // Aprox formula
+		int KBps = (1024 / 8) * atof(argv[4]);
+		maxpp = (double)(KBps) * 1024 / 64;  // Aprox formula
 		
 		struct in_addr last_ip;
 		inet_aton(argv[1], &current_ip);
 		inet_aton(argv[2], &last_ip);
 		total_ips = ntohl(last_ip.s_addr) - ntohl(current_ip.s_addr);
 		
-		printf("Staring to scan %u ip addresses and %d ports per address at %d KBps\n", total_ips, total_ports, KBps);
+		printf("Staring to scan %u ip addresses and %d ports per address at %d KBps (%d pps)\n", total_ips, total_ports, KBps, maxpp);
 	}
 	
 	if( pcap_findalldevs( &alldevsp , errbuf) < 0 ) {
@@ -192,8 +208,6 @@ int main(int argc, char **argv) {
 		exit(EXIT_FAILURE);
 	}
 	
-	mysql_initialize();
-	
 	// Start!
 	pthread_t scanner, db;
 	pthread_create (&scanner, NULL, &query_adder, NULL);
@@ -214,67 +228,47 @@ int main(int argc, char **argv) {
 	pcap_loop(handle , -1 , process_packet , NULL);
 }
 
-MYSQL *mysql_conn;
-void mysql_initialize() {
-	char *server = getenv("MYSQL_HOST");
-	char *user = getenv("MYSQL_USER");
-	char *password = getenv("MYSQL_PASS");
-	char *database = getenv("MYSQL_DB");
-	
-	if (!server) server = "localhost";
-	
-	mysql_conn = mysql_init(NULL);
-	// Enable auto-reconnect, as some versions do not enable it by default
-	my_bool reconnect = 1;
-	mysql_options(mysql_conn, MYSQL_OPT_RECONNECT, &reconnect);
+void hash_table_add(struct in_addr ip, unsigned short port) {
+	num_t_ent++;
 
-	/* Connect to database */
-	printf("Connecting to mysqldb...\n");
-	if (!mysql_real_connect(mysql_conn, server, user, password, database, 0, NULL, 0)) {
-		fprintf(stderr, "%s\n", mysql_error(mysql_conn));
-		fprintf(stderr, "User %s Pass %s Host %s Database %s\n", user, password, server, database);
-		exit(1);
-	}
-	printf("Connected!\n");
-}
-
-void hash_table_add(struct in_addr ip, unsigned short port, unsigned char status) {
-	// Create a hash
-	unsigned int hash = ( ip.s_addr ^ port ^ (port >> 2) ^ (ip.s_addr >> 7) ^ 0xdeadbeef ) % MAX_OUTSTANDING_QUERIES;
-	unsigned int ptr = (hash + 1) % MAX_OUTSTANDING_QUERIES;
+	free_list->status = statusUnknown;
+	free_list->port = port;
+	free_list->ip = ip;
+	free_list->scan_start = time(0);
 
 	pthread_mutex_lock(&hash_table_mutex);
-	while (ptr != hash) {
-		if (port_scans[ptr].status == 0) {
-			port_scans[ptr].status = status;
-			port_scans[ptr].port = port;
-			port_scans[ptr].ip = ip;
-			port_scans[ptr].checks = 0;
-			num_t_ent++;
-			break;
-		}
-		ptr = (ptr + 1) % MAX_OUTSTANDING_QUERIES;
+	if (timeout_list_tail) {
+		// Merge the two lists and then move ptrs and null terminate it
+		timeout_list_tail->next = free_list;
+		timeout_list_tail = timeout_list_tail->next;
+		free_list = free_list->next;
+		timeout_list_tail->next = NULL;
+	} else {
+		timeout_list = free_list;
+		timeout_list_tail = free_list;
+		free_list = free_list->next;
 	}
+	uint64_t key = ip.s_addr | (((uint64_t)port) << 32);
+	mapped_scans[key] = timeout_list_tail;
 	pthread_mutex_unlock(&hash_table_mutex);
 }
 
 void hash_table_del(struct port_query * ent) {
+	uint64_t key = ent->ip.s_addr | (((uint64_t)ent->port) << 32);
+	mapped_scans.erase(key);
 }
 
-struct port_query * hash_table_lookup(struct in_addr ip, unsigned short port) {
-	unsigned int hash = ( ip.s_addr ^ port ^ (port >> 2) ^ (ip.s_addr >> 7) ^ 0xdeadbeef ) % MAX_OUTSTANDING_QUERIES;
-	unsigned int ptr = (hash + 1) % MAX_OUTSTANDING_QUERIES;
-	
+port_query * hash_table_lookup(struct in_addr ip, unsigned short port) {
+	port_query * ret = NULL;
+
+	uint64_t key = ip.s_addr | (((uint64_t)port) << 32);
+
 	pthread_mutex_lock(&hash_table_mutex);
-	while (ptr != hash) {
-		if (port_scans[ptr].ip.s_addr == ip.s_addr && port_scans[ptr].port == port && port_scans[ptr].status != 0) {
-			pthread_mutex_unlock(&hash_table_mutex);
-			return &port_scans[ptr];
-		}
-		ptr = (ptr + 1) % MAX_OUTSTANDING_QUERIES;
-	}
+	if (mapped_scans.count(key))
+		ret = mapped_scans.at(key);
 	pthread_mutex_unlock(&hash_table_mutex);
-	return NULL;
+
+	return ret;
 }
 
 struct in_addr nextip() {
@@ -283,11 +277,9 @@ struct in_addr nextip() {
 }
 
 // This thread creates packets, accounts them and then sends them through the wire
-volatile unsigned long long injected_packets = 0;
 void * query_adder(void * args) {
 	// For each IP, forge a packet for each port
-	sleep(1);
-	
+
 	int i,j;
 	unsigned int init_time = time(0);
 	for (i = 0; i < total_ips && adder_finish == 0; i++) {
@@ -297,7 +289,7 @@ void * query_adder(void * args) {
 		for (j = 0; j < total_ports; j++) {
 			int port_dst = portlist[j];
 			forge_packet(packet[j], &ip_dst, port_dst);
-			hash_table_add(ip_dst, port_dst, 1);
+			hash_table_add(ip_dst, port_dst);
 		}
 		
 		for (j = 0; j < total_ports; j++) {
@@ -306,10 +298,15 @@ void * query_adder(void * args) {
 		}
 		
 		// Throttle & limit stuff!
-		while (num_t_ent > MAX_OUTSTANDING_QUERIES - 32)
+		//printf("PPS %f %d \n", ((double)injected_packets)/(double)(time(0)-init_time+1), (unsigned)num_t_ent);
+		while (num_t_ent > MAX_OUTSTANDING_QUERIES - 32) {
 			sleep(1);
-		while (((double)injected_packets)/(double)(time(0)-init_time+1) > maxpp)
+			//printf("SLEEP 1 %d\n", (unsigned)num_t_ent);
+		}
+		while (((double)injected_packets)/(double)(time(0)-init_time+1) > maxpp) {
 			sleep(1);
+			//printf("SLEEP 2 %f %d\n", ((double)injected_packets)/(double)(time(0)-init_time+1), maxpp);
+		}
 	}
 	printf("All packets injected :D work done!\n");
 	adder_finish = 1;
@@ -427,11 +424,10 @@ void process_packet(unsigned char *args, const struct pcap_pkthdr *header, const
 		
 		if (open || filtered) {
 			// Look up for the packet and then mark the appropriate status
-			struct port_query * entry = hash_table_lookup(dest.sin_addr, ntohs(tcph->th_sport));
-			//printf("%d port\n",ntohs(tcph->th_sport));
+			port_query * entry = hash_table_lookup(dest.sin_addr, ntohs(tcph->th_sport));
 			if (entry != NULL) {
-				//printf("Found in table!\n");
-				entry->status = (open) ? 2 : 3;
+				entry->status = (open) ? statusOpen : statusFiltered;
+				// FIXME: Optimize the path and move this out of the timeout list
 			}
 		}
 	}
@@ -439,76 +435,54 @@ void process_packet(unsigned char *args, const struct pcap_pkthdr *header, const
 
 // Walk the table from time to time and insert scanned IPs and remove the timed out wans
 void * database_dispatcher(void * args) {
-	char sql_query[2][64*1024];
-	sql_prepare(sql_query[0],sql_query[1]);
+	uint64_t num_ports_open = 0;
+	uint64_t num_ports_filtered = 0;
 
 	do {
-		unsigned int ptr = MAX_OUTSTANDING_QUERIES;
-		do {
-			ptr--;
-			struct port_query * entry = &port_scans[ptr];
-			if (entry->status == 2 || entry->status == 3) {
-				if (strlen(sql_query[0]) > sizeof(sql_query[0])*0.9f || 
-					strlen(sql_query[1]) > sizeof(sql_query[1])*0.9f) {
-					
-					flush_db(sql_query[0],sql_query[1]);
-					sql_prepare(sql_query[0],sql_query[1]);
-				}
-				insert_register(entry->ip, entry->port, entry->status, sql_query[0],sql_query[1]);
-			}
-			
-			pthread_mutex_lock(&hash_table_mutex);
-			if (entry->status)
-				entry->checks++;
-			if (entry->status == 2 || entry->status == 3) {
+		time_t currtime = time(0);
+
+		pthread_mutex_lock(&hash_table_mutex);
+		while (timeout_list != NULL && timeout_list->scan_start + MAX_TIMEOUT < currtime) {
+			// Process the entry
+			if (timeout_list->status != statusUnknown) {
 				// Save open/filtered
-				num_ports_open += (entry->status == 2) ? 1:0;
-				num_ports_filtered += (entry->status == 3) ? 1:0;
-				
-				entry->status = 0;
-				num_t_ent--;
+				//db->updateService(ntohl(timeout_list->ip.s_addr), timeout_list->port,
+				//                  std::to_string((unsigned)timeout_list->status));
+				if (timeout_list->status == statusOpen)
+					db->addService(ntohl(timeout_list->ip.s_addr), timeout_list->port);
+
+				num_ports_open += (timeout_list->status == statusOpen) ? 1 : 0;
+				num_ports_filtered += (timeout_list->status == statusFiltered) ? 1 : 0;
 			}
-			if (entry->status == 1 && entry->checks > MAX_TIMEOUT) {
-				// Save open/filtered
-				entry->status = 0;
-				num_t_ent--;
-			}
-			pthread_mutex_unlock(&hash_table_mutex);
-		} while (ptr > 0);
+
+			// Delete entry
+			hash_table_del(timeout_list);
+
+			auto elem = timeout_list;
+			// Advance the timeout_list
+			timeout_list = timeout_list->next;
+			if (!timeout_list)
+				timeout_list_tail = NULL;
+
+			// Add entry to free_list
+			elem->next = free_list;
+			free_list = elem;
+
+			num_t_ent--;
+		}
+		pthread_mutex_unlock(&hash_table_mutex);
 
 		sleep(1);
-		int p = 100.0f*injected_packets/(total_ips*total_ports);
-		printf("\rOutstanding scans: %d   (%d%% done)    ",num_t_ent, p); fflush(stdout);
+		int p = 100.0f * injected_packets / (total_ips * total_ports);
+		printf("\rOutstanding scans: %06d (%d%% done, %llu)        ", (unsigned)num_t_ent, p, (uint64_t)injected_packets);
+		fflush(stdout);
 	} while (!adder_finish || num_t_ent > 0);
-	
-	flush_db(sql_query[0],sql_query[1]);
+
+	delete db;
 	
 	printf("End of scan, quitting!\n");
 	printf("Open %llu Filtered %llu\n", num_ports_open, num_ports_filtered);
 
-	mysql_close(mysql_conn);
 	exit(0);
 }
-
-void sql_prepare(char *q1, char *q2) {
-	strcpy(q1, "INSERT IGNORE INTO `hosts` (`ip`) VALUES ");
-	strcpy(q2, "INSERT IGNORE INTO `services` (`ip`, `port`, `filtered`) VALUES ");
-}
-
-void insert_register(struct in_addr ip, unsigned int port, unsigned int status, char *q1, char *q2) {
-	char * comma = ",";
-	if (q1[strlen(q1)-1] == ' ') comma = " ";
-	
-	char temp[4096];
-	sprintf(temp,"%s('%u')", comma, ntohl(ip.s_addr));
-	strcat(q1,temp);
-	sprintf(temp,"%s('%u', '%u', '%d')", comma, ntohl(ip.s_addr), port, status-2);
-	strcat(q2,temp);
-}
-
-void flush_db(const char * q1, const char * q2) {
-	mysql_query(mysql_conn, q1);
-	mysql_query(mysql_conn, q2);
-}
-
 

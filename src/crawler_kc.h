@@ -8,7 +8,8 @@ public:
 	DBKC(bool bannercrawl, std::string args);
 	virtual ~DBKC();
 
-	bool next(std::vector <std::string> & resultset) override;
+	void addService(uint32_t, uint16_t) override;
+	bool next(std::string & resultset) override;
 
 	void updateService(uint32_t ip, unsigned short port, std::string data) override;
 	void updateVhost(const std::string &vhost, const std::string &url,
