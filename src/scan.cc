@@ -280,6 +280,14 @@ struct in_addr nextip() {
 void * query_adder(void * args) {
 	// For each IP, forge a packet for each port
 
+	int one = 1;
+	const int *val = &one;
+	if (setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
+		fprintf(stderr, "Warning: Cannot set HDRINCL\n");
+
+	int sendbuff = 1024*1024;
+	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sendbuff, sizeof(sendbuff));
+
 	int i,j;
 	unsigned int init_time = time(0);
 	for (i = 0; i < total_ips && adder_finish == 0; i++) {
@@ -388,15 +396,9 @@ void forge_packet(char * datagram, const struct in_addr * targetip, int targetpo
 }
 
 void inject_packet(char * datagram) {
-	
 	struct sniff_ip *iph = (struct sniff_ip *)datagram;
 	struct sniff_tcp *tcph = (struct sniff_tcp *)(datagram + sizeof(struct sniff_ip));
 		
-	int one = 1;
-	const int *val = &one;
-	if (setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
-		fprintf(stderr, "Warning: Cannot set HDRINCL\n");
-
 	struct sockaddr_in sin;
 	sin.sin_family = AF_INET;
 	sin.sin_port = tcph->th_dport;
