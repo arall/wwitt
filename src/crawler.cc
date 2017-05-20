@@ -144,7 +144,7 @@ std::string generateHTTPQuery(const std::string vhost, const std::string path) {
 
 class Connection {
 public:
-	static uint64_t gennumber;
+	static std::atomic<uint64_t> gennumber;
 	static std::map<uint64_t, Connection*> conns;
 	static std::mutex conns_mutex;
 
@@ -303,7 +303,7 @@ uint32_t getIP(std::string entry) {
 	for (unsigned i = 0; i < 4; i++) {
 		ret <<= 8;
 		ret |= atoi(entry.substr(pos).c_str());
-		pos = entry.find('.', pos);
+		pos = entry.find('.', pos) + 1;
 	}
 	return ret;
 }
@@ -312,7 +312,7 @@ uint32_t getPort(std::string entry) {
 	return atoi(entry.substr(entry.find(':') + 1).c_str());
 }
 
-uint64_t Connection::gennumber = 0;
+std::atomic<uint64_t> Connection::gennumber(0);
 std::map<uint64_t, Connection*> Connection::conns;
 std::mutex Connection::conns_mutex;
 
