@@ -24,11 +24,12 @@
 #include <signal.h>
 #include <pthread.h>
 #include <sys/resource.h>
-#include <brotli/encode.h>
 #include "pqueue.h"
 #include "crawler.h"
 //#include "crawler_mysql.h"
 #include "crawler_kc.h"
+#include "http.pb.h"
+#include "util.h"
 
 #ifdef TADNS_RESOLVER
 #include "tadns.h"
@@ -149,7 +150,7 @@ public:
 	static std::mutex conns_mutex;
 
 	Connection() :
-	   status(reqPending), retries(0),
+	   status(reqPending), lasterr(httpcrawler::HttpWeb::UNKNOWN_ERROR), retries(0),
 	   redirs(0), dechunked(false)
 	{
 		sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -218,8 +219,10 @@ public:
 		sin.sin_family = AF_INET;
 	
 		int res = connect(sock, (struct sockaddr *)&sin,sizeof(sin));
-		if (CONNECT_ERR(res))
+		if (CONNECT_ERR(res)) {
 			status = reqError; // Drop connection!
+			lasterr = httpcrawler::HttpWeb::CONNECTION_ERROR;
+		}
 		else if (CONNECT_OK(res))
 			status = reqTransfer;
 	}
@@ -235,8 +238,10 @@ public:
 				int sent = write(sock, outbuffer.c_str(), outbuffer.size());
 				if (sent > 0)
 					outbuffer = outbuffer.substr(sent);
-				else if (!IOTRY_AGAIN(sent))
+				else if (!IOTRY_AGAIN(sent)) {
 					status = reqError;
+					lasterr = httpcrawler::HttpWeb::DOWNLOAD_ERROR;
+				}
 			}
 		
 			// Try to receive data
@@ -248,21 +253,27 @@ public:
 			}
 			else if (rec == 0) {
 				// End of data. OK if we sent all the data only
-				if (outbuffer.size()) 
+				if (outbuffer.size())  {
 					status = reqError; // Disconnect, but ERR!
+					lasterr = httpcrawler::HttpWeb::DOWNLOAD_ERROR;
+				}
 				else
 					status = reqComplete; // Disconnect, OK!
 			}
-			else if (!IOTRY_AGAIN(rec))
+			else if (!IOTRY_AGAIN(rec)) {
 				status = reqError;  // Connection error!
+				lasterr = httpcrawler::HttpWeb::DOWNLOAD_ERROR;
+			}
 		}
 		
 		// Check timeout, is OK for banner, not for HTTP
 		if (hasTimedOut()) {
 			if (bannercrawl && inbuffer.size() > 0)
 				status = reqComplete;
-			else
+			else {
 				status = reqError;
+				lasterr = httpcrawler::HttpWeb::CONNECTION_TIMEOUT_ERROR;
+			}
 		}
 
 		updateEpoll();
@@ -287,6 +298,7 @@ public:
 	uint32_t ip;
 	unsigned short port;
 	RequestsStatus status;
+	httpcrawler::HttpWeb::CrawlStatus lasterr;
 	unsigned char retries;
 	unsigned char redirs;
 	bool dechunked;
@@ -322,7 +334,7 @@ void * curl_dispatcher(void * args);
 
 int max_inflight = 100;
 int max_curl_inflight = 50;
-int max_db_inflight = 2;
+int max_db_inflight = 5;
 
 std::atomic<bool> db_global_end(false);
 void sigterm(int s) {
@@ -654,6 +666,7 @@ static void dns_callback(struct dns_cb_data *cbdata) {
 	else if (cbdata->error == DNS_TIMEOUT || cbdata->error == DNS_ERROR) {
 		// Retry properly!
 		c->retries++;
+		c->lasterr = httpcrawler::HttpWeb::DNS_ERROR;
 		pqueue_push(&new_queries, c);
 		return;
 	}
@@ -732,6 +745,7 @@ static void dns_callback(void *arg, int status, int timeouts, struct hostent *ho
 
 	// Since cares already retries DNS requests, make sure it doens't respin
 	c->retries = MAX_RETRIES;
+	c->lasterr = httpcrawler::HttpWeb::DNS_ERROR;
 	pqueue_push(&new_queries, c);
 }
 // Wait for DNS requests, process them one at a time and store the IP back
@@ -814,25 +828,6 @@ void * dns_dispatcher(void * args) {
 }
 #endif
 
-std::string brotliarchive(std::string in) {
-	BrotliEncoderState* s = BrotliEncoderCreateInstance(0, 0, 0);
-	BrotliEncoderSetParameter(s, BROTLI_PARAM_QUALITY, 10);
-	BrotliEncoderSetParameter(s, BROTLI_PARAM_LGWIN, BROTLI_MAX_WINDOW_BITS);
-
-	uint8_t *tptr = (uint8_t*)malloc(in.size()*2);
-	size_t available_in = in.size();
-	size_t available_out = in.size() * 2;
-	const uint8_t *next_in = (uint8_t*)in.data();
-	uint8_t *next_out = tptr;
-	BrotliEncoderCompressStream(s, BROTLI_OPERATION_FINISH, &available_in, &next_in, &available_out, &next_out, NULL);
-	BrotliEncoderDestroyInstance(s);
-
-	std::string ret((char*)tptr, available_out);
-	free(tptr);
-
-	return ret;
-}
-
 // Walk the table from time to time and insert results into the database
 void * database_dispatcher(void * args) {
 	bool bannercrawl = *(bool*)args;
@@ -865,7 +860,14 @@ void * database_dispatcher(void * args) {
 			}else{
 				int eflag = c->status == reqCompleteError ? 0x80 : 0;
 
-				db->updateVhost(c->vhost, c->url, brotliarchive(c->inbuffer), eflag);
+				httpcrawler::HttpWeb p;
+				p.set_status(c->lasterr);
+				p.set_crawled_url(c->url);
+				p.set_blob(c->inbuffer);
+
+				std::string serialized;
+				p.SerializeToString(&serialized);
+				db->updateVhost(c->vhost, c->url, brotliarchive(serialized), eflag);
 			}
 			num_processed++;
 			if (verbose)
@@ -930,6 +932,7 @@ void * curl_dispatcher(void * args) {
 		}
 		else {
 			c->status = reqError;
+			c->lasterr = httpcrawler::HttpWeb::CURL_ERROR;
 			pqueue_push(&new_queries, c);
 		}
 

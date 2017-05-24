@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include "crawler_kc.h"
 #include "crawler.h"
+#include "util.h"
+#include "http.pb.h"
 
 DBKC::DBKC(bool bannercrawl, std::string args) 
   : DBIface(bannercrawl) {
@@ -41,11 +43,16 @@ void DBKC::addService(uint32_t ip, uint16_t port) {
 bool DBKC::next(std::string & resultset) {
 	resultset.clear();
 	std::string key, value;
+	httpcrawler::HttpWeb p;
 
 	do {
 		if (!cur->get(&key, &value, true))
 			return false;
-	} while (value.size() > 0);
+
+		std::string ser = brotlidearchive(value);
+		p.ParseFromString(ser);
+
+	} while (p.status() != httpcrawler::HttpWeb::UNCRAWLED);
 
 	resultset = key;
 	return true;

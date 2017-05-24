@@ -16,8 +16,14 @@ dispatcher_daemon:
 scan:
 	$(CXX) -o scan scan.cc -lpcap  -lpthread -O2 crawler_kc.cc -lkyotocabinet
 
+host_fill_kc:
+	g++ -o host_fill_kc host_fill_kc.cc http.pb.cc util.cc -lkyotocabinet -lbrotlienc -lbrotlidec -lbrotlicommon -lprotobuf
+
 crawler:
-	$(CXX) -o crawler crawler.cc crawler_kc.cc $(DNSLIB) -lkyotocabinet -lpthread -O2 -ggdb -lcurl -lbrotlienc -lbrotlicommon # `mysql_config --include` `mysql_config --libs`
+	protoc -I=. --cpp_out=. http.proto
+	protoc -I=. --python_out=. http.proto
+	$(CXX) -o crawler crawler.cc crawler_kc.cc util.cc http.pb.cc $(DNSLIB) -lkyotocabinet -lpthread -O2 -ggdb -lcurl -lbrotlienc -lbrotlidec -lbrotlicommon -lprotobuf
+	# `mysql_config --include` `mysql_config --libs`
 
 vhost:
 	$(CXX) -o captcha.o -c captcha.cc  -O0 -ggdb

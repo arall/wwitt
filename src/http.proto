@@ -1,0 +1,37 @@
+syntax = "proto2";
+
+package httpcrawler;
+
+message HttpWeb {
+  // Internal status, for crawling purpose
+  enum CrawlStatus {
+    UNCRAWLED = 0;
+    CRAWLED_OK = 1;
+	UNKNOWN_ERROR = 2;
+    DNS_ERROR = 3;
+    CONNECTION_ERROR = 4;
+    CONNECTION_TIMEOUT_ERROR = 5;
+    DOWNLOAD_ERROR = 6;
+    TOO_BIG_ERROR = 7;
+    CURL_ERROR = 8;
+  }
+
+  required CrawlStatus status = 1;
+
+  // The final URL we crawled, including proto:// and URL redirects
+  // (maybe even fullpage iframes and/or HTTP redirects?)
+  optional string crawled_url = 2;
+
+  // Actual content crawled, including HTTP headers
+  optional bytes blob = 3;
+  // HTTP response code for the above blob
+  optional int32 code = 4;
+}
+
+message HttpWebEntry {
+  // The domain we prtend to crawl into the DB
+  required string domain = 1;
+
+  required HttpWeb entry = 2;
+}
+
